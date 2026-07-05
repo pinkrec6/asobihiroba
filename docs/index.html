@@ -275,9 +275,18 @@
   .tool-btn.sel .lb{color:var(--ink);}
 
   /* ---------- nurie ---------- */
-  #nurie-select{flex:1; min-height:0; overflow-y:auto; display:grid;
-    grid-template-columns:repeat(auto-fill, minmax(130px, 1fr));
-    gap:12px; align-content:start; max-width:620px; margin:0 auto; width:100%;}
+  #nurie-select{flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column;
+    gap:6px; max-width:640px; margin:0 auto; width:100%;}
+  .nurie-cat-h{font-weight:800; font-size:1.02rem; padding:8px 4px 2px;}
+  .pics-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(102px, 1fr)); gap:10px;}
+  .photo-make{
+    display:flex; align-items:center; gap:12px; background:var(--paper); border-radius:20px;
+    padding:14px 18px; font-size:1.02rem; font-weight:800; box-shadow:var(--shadow);
+    border-bottom:5px solid var(--aqua); margin-top:4px; transition:transform .1s;
+  }
+  .photo-make:active{transform:scale(.97);}
+  .photo-make .ic{font-size:1.7rem;}
+  .photo-make small{margin-left:auto; font-size:.68rem; color:var(--ink-soft); font-weight:700;}
   .pic-btn{background:#fff; border-radius:20px; padding:10px; display:flex; flex-direction:column;
     align-items:center; gap:4px; box-shadow:var(--shadow); transition:transform .1s;}
   .pic-btn:active{transform:scale(.94);}
@@ -437,6 +446,7 @@
       <button class="pill-btn" id="nurie-other" style="visibility:hidden">べつのえ</button>
     </div>
     <div id="nurie-select"></div>
+    <input type="file" id="nurie-file" accept="image/*" style="display:none">
     <div id="nurie-work" style="display:none; flex:1; min-height:0; flex-direction:column;">
       <div id="nurie-area">
         <div id="nurie-wrap">
@@ -943,6 +953,24 @@ function countPick(btn, v){
 var dCanvas=$('#draw-canvas'), dCtx=dCanvas.getContext('2d');
 var COLORS=['#333333','#FF5A5A','#FF9430','#FFD93B','#3FBF8F','#4AA3FF','#8E7DF0','#FF9ECD','#8B5A2B'];
 var draw={color:'#FF5A5A', size:14, rainbow:false, eraser:false, hue:0, drawing:false, lx:0, ly:0};
+var dUndo=[];
+function snapCanvas(cv){
+  var s=document.createElement('canvas');
+  s.width=cv.width; s.height=cv.height;
+  s.getContext('2d').drawImage(cv,0,0);
+  return s;
+}
+function pushDrawUndo(){
+  dUndo.push(snapCanvas(dCanvas));
+  if(dUndo.length>15) dUndo.shift();
+}
+function drawUndo(){
+  var s=dUndo.pop();
+  if(!s) return;
+  dCtx.globalCompositeOperation='source-over';
+  dCtx.clearRect(0,0,dCanvas.width,dCanvas.height);
+  dCtx.drawImage(s,0,0,dCanvas.width,dCanvas.height);
+}
 
 (function buildDrawTools(){
   var sw=$('#swatches');
@@ -978,6 +1006,11 @@ var draw={color:'#FF5A5A', size:14, rainbow:false, eraser:false, hue:0, drawing:
     });
     sz.appendChild(b);
   });
+  var du=document.createElement('button');
+  du.className='pill-btn';
+  du.textContent='↩️ もどす';
+  du.addEventListener('click', function(){ sfx.tap(); drawUndo(); });
+  sz.appendChild(du);
 })();
 function drawSelect(btn, c, rainbow, eraser){
   sfx.tap();
@@ -1029,6 +1062,7 @@ function strokeTo(x,y){
 dCanvas.addEventListener('pointerdown', function(e){
   e.preventDefault();
   dCanvas.setPointerCapture(e.pointerId);
+  pushDrawUndo();
   draw.drawing=true;
   var p=evPos(e,dCanvas);
   draw.lx=p[0]; draw.ly=p[1];
@@ -1045,11 +1079,13 @@ dCanvas.addEventListener('pointermove', function(e){
 });
 $('#draw-clear').addEventListener('click', function(){
   sfx.tap();
+  pushDrawUndo();
+  dCtx.globalCompositeOperation='source-over';
   dCtx.clearRect(0,0,dCanvas.width,dCanvas.height);
 });
 
 /* ================= nurie(ぬりえ) ================= */
-/* 線画は 0〜100 の座標系で定義 */
+/* ===== nurie line-art library (0-100 coords, stroke only) ===== */
 function ln(c){ c.strokeStyle='#26292E'; c.lineCap='round'; c.lineJoin='round'; }
 function circle(c,x,y,r){ c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.stroke(); }
 function ellip(c,x,y,rx,ry,rot){ c.beginPath(); c.ellipse(x,y,rx,ry,rot||0,0,Math.PI*2); c.stroke(); }
@@ -1060,84 +1096,1152 @@ function poly(c,pts,close){
   c.stroke();
 }
 function line(c,x1,y1,x2,y2){ c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke(); }
+function arc2(c,x,y,r,a0,a1,ccw){ c.beginPath(); c.arc(x,y,r,a0*Math.PI/180,a1*Math.PI/180,!!ccw); c.stroke(); }
+function q(c,x0,y0,cx,cy,x1,y1){ c.beginPath(); c.moveTo(x0,y0); c.quadraticCurveTo(cx,cy,x1,y1); c.stroke(); }
+function rrect(c,x,y,w,h,r){
+  c.beginPath(); c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r);
+  c.closePath(); c.stroke();
+}
+function starP(c,x,y,ro,ri){
+  c.beginPath();
+  for(var i=0;i<10;i++){
+    var r=i%2?ri:ro, a=-Math.PI/2+i*Math.PI/5;
+    var px=x+Math.cos(a)*r, py=y+Math.sin(a)*r;
+    if(i) c.lineTo(px,py); else c.moveTo(px,py);
+  }
+  c.closePath(); c.stroke();
+}
+function heart(c,x,y,s){
+  c.beginPath(); c.moveTo(x,y+s*0.85);
+  c.bezierCurveTo(x-s*1.15,y+s*0.1,x-s*0.62,y-s*0.6,x,y-s*0.15);
+  c.bezierCurveTo(x+s*0.62,y-s*0.6,x+s*1.15,y+s*0.1,x,y+s*0.85);
+  c.closePath(); c.stroke();
+}
+function cloud(c,x,y,s){
+  c.beginPath();
+  c.arc(x-1.05*s,y+0.1*s,0.62*s,Math.PI*0.45,Math.PI*1.5);
+  c.arc(x-0.35*s,y-0.45*s,0.62*s,Math.PI*1.02,Math.PI*1.9);
+  c.arc(x+0.45*s,y-0.35*s,0.62*s,Math.PI*1.25,Math.PI*0.02);
+  c.arc(x+1.05*s,y+0.15*s,0.55*s,Math.PI*1.55,Math.PI*0.5);
+  c.closePath(); c.stroke();
+}
+function eyes2(c,dx,y,r){ circle(c,50-dx,y,r); circle(c,50+dx,y,r); }
+function smile2(c,y,r){ arc2(c,50,y,r,25,155); }
 
-var NURIE_PICS=[
- {name:'さかな', draw:function(c){
-   ellip(c,44,50,27,17);
-   c.beginPath(); c.moveTo(69,50); c.lineTo(88,33); c.quadraticCurveTo(83,50,88,67); c.closePath(); c.stroke();
-   circle(c,30,44,3.5);
-   c.beginPath(); c.moveTo(44,33.5); c.quadraticCurveTo(50,18,58,35.5); c.stroke();
-   c.beginPath(); c.moveTo(47,33.4); c.quadraticCurveTo(50,52,49,66.8); c.stroke();
-   c.beginPath(); c.moveTo(57,34.9); c.quadraticCurveTo(60,50,58,65.2); c.stroke();
-   circle(c,80,18,4); circle(c,88,10,3); circle(c,73,9,2.5);
- }},
- {name:'おうち', draw:function(c){
-   c.strokeRect(25,45,45,40);
-   poly(c,[[20,45],[47.5,20],[75,45]]);
-   c.strokeRect(43,62,13,23); circle(c,53,74,1.5);
-   c.strokeRect(30,52,9,9); line(c,34.5,52,34.5,61); line(c,30,56.5,39,56.5);
-   c.strokeRect(59,52,9,9); line(c,63.5,52,63.5,61); line(c,59,56.5,68,56.5);
-   circle(c,86,14,6.5);
-   for(var i=0;i<8;i++){
-     var a=i*Math.PI/4;
-     line(c, 86+Math.cos(a)*9, 14+Math.sin(a)*9, 86+Math.cos(a)*12, 14+Math.sin(a)*12);
-   }
-   ellip(c,13,15,8,4.5); ellip(c,20,12,5,3.5);
-   line(c,5,85,95,85);
- }},
- {name:'ちょうちょ', draw:function(c){
-   ellip(c,50,52,4,15);
-   circle(c,50,31,5);
-   c.beginPath(); c.moveTo(47,27); c.quadraticCurveTo(42,18,38,16); c.stroke(); circle(c,37,15,1.5);
-   c.beginPath(); c.moveTo(53,27); c.quadraticCurveTo(58,18,62,16); c.stroke(); circle(c,63,15,1.5);
-   c.beginPath(); c.moveTo(46,44); c.bezierCurveTo(14,10,2,42,46,57); c.closePath(); c.stroke();
-   c.beginPath(); c.moveTo(54,44); c.bezierCurveTo(86,10,98,42,54,57); c.closePath(); c.stroke();
-   c.beginPath(); c.moveTo(47,58); c.bezierCurveTo(18,78,36,94,48,64); c.closePath(); c.stroke();
-   c.beginPath(); c.moveTo(53,58); c.bezierCurveTo(82,78,64,94,52,64); c.closePath(); c.stroke();
-   circle(c,26,36,5); circle(c,74,36,5);
- }},
- {name:'ロケット', draw:function(c){
-   c.beginPath(); c.moveTo(38,34); c.quadraticCurveTo(38,12,50,6);
-   c.quadraticCurveTo(62,12,62,34); c.lineTo(62,72); c.lineTo(38,72); c.closePath(); c.stroke();
-   circle(c,50,32,8);
-   line(c,38,52,62,52);
-   poly(c,[[38,56],[24,80],[38,74]]);
-   poly(c,[[62,56],[76,80],[62,74]]);
-   c.beginPath(); c.moveTo(42,73); c.quadraticCurveTo(44,86,50,92);
-   c.quadraticCurveTo(56,86,58,73); c.stroke();
-   circle(c,15,20,2.5); circle(c,84,42,2.5); circle(c,20,58,2); circle(c,88,14,2);
- }},
- {name:'おはな', draw:function(c){
-   for(var i=0;i<6;i++){
-     var a=i*Math.PI/3 - Math.PI/2;
-     ellip(c, 50+Math.cos(a)*15, 36+Math.sin(a)*15, 8, 12, a+Math.PI/2);
-   }
-   circle(c,50,36,8.5);
-   c.strokeRect(48,50,4,33);
-   ellip(c,38,68,9,4.5,-0.7);
-   ellip(c,62,74,9,4.5,0.7);
-   line(c,5,85,95,85);
-   circle(c,14,18,5);
- }},
- {name:'ねこ', draw:function(c){
-   circle(c,50,54,29);
-   poly(c,[[29,35],[24,9],[45,27]]);
-   poly(c,[[71,35],[76,9],[55,27]]);
-   poly(c,[[31.5,30],[29,17],[40,26.5]]);
-   poly(c,[[68.5,30],[71,17],[60,26.5]]);
-   circle(c,39,49,4); circle(c,61,49,4);
-   poly(c,[[50,58],[46.5,54],[53.5,54]]);
-   c.beginPath(); c.moveTo(50,58); c.quadraticCurveTo(50,64,44,65); c.stroke();
-   c.beginPath(); c.moveTo(50,58); c.quadraticCurveTo(50,64,56,65); c.stroke();
-   line(c,20,52,32,54); line(c,20,60,32,59);
-   line(c,80,52,68,54); line(c,80,60,68,59);
-   circle(c,50,80,3.5);
-   poly(c,[[46.5,80],[36,73],[36,87]]);
-   poly(c,[[53.5,80],[64,73],[64,87]]);
- }}
+var PICS_A=[
+/* ============ どうぶつ ============ */
+{name:'ねこ',cat:'どうぶつ',draw:function(c){
+  circle(c,50,54,29);
+  poly(c,[[29,35],[24,9],[45,27]]);
+  poly(c,[[71,35],[76,9],[55,27]]);
+  poly(c,[[31.5,30],[29,17],[40,26.5]]);
+  poly(c,[[68.5,30],[71,17],[60,26.5]]);
+  circle(c,39,49,4); circle(c,61,49,4);
+  poly(c,[[50,58],[46.5,54],[53.5,54]]);
+  q(c,50,58,50,64,44,65); q(c,50,58,50,64,56,65);
+  line(c,20,52,32,54); line(c,20,60,32,59);
+  line(c,80,52,68,54); line(c,80,60,68,59);
+  circle(c,50,80,3.5);
+  poly(c,[[46.5,80],[36,73],[36,87]]);
+  poly(c,[[53.5,80],[64,73],[64,87]]);
+}},
+{name:'いぬ',cat:'どうぶつ',draw:function(c){
+  circle(c,50,56,28);
+  ellip(c,25,50,8,15,0.5); ellip(c,75,50,8,15,-0.5);
+  circle(c,61,50,8);
+  eyes2(c,11,50,3.5);
+  ellip(c,50,61,4.5,3.5);
+  q(c,50,64,50,70,44,71); q(c,50,64,50,70,56,71);
+  ellip(c,50,74,3.5,4);
+}},
+{name:'うさぎ',cat:'どうぶつ',draw:function(c){
+  ellip(c,39,20,8,16); ellip(c,61,20,8,16);
+  ellip(c,39,22,3.5,10); ellip(c,61,22,3.5,10);
+  circle(c,50,58,26);
+  eyes2(c,10,52,3.5);
+  poly(c,[[50,60],[47,56.5],[53,56.5]]);
+  q(c,50,60,50,65,45,66); q(c,50,60,50,65,55,66);
+  rrect(c,46,66,8,7,2); line(c,50,66,50,73);
+  circle(c,31,62,4); circle(c,69,62,4);
+}},
+{name:'くま',cat:'どうぶつ',draw:function(c){
+  circle(c,29,33,9); circle(c,71,33,9);
+  circle(c,29,33,4); circle(c,71,33,4);
+  circle(c,50,56,28);
+  eyes2(c,11,50,3.3);
+  ellip(c,50,63,10,7.5);
+  ellip(c,50,60.5,3.2,2.4);
+  q(c,50,63,50,67,46,68); q(c,50,63,50,67,54,68);
+}},
+{name:'パンダ',cat:'どうぶつ',draw:function(c){
+  circle(c,29,33,9); circle(c,71,33,9);
+  circle(c,50,56,28);
+  ellip(c,40,50,6.5,8.5,0.25); ellip(c,60,50,6.5,8.5,-0.25);
+  circle(c,41,51,2.2); circle(c,59,51,2.2);
+  poly(c,[[50,62],[47.2,59],[52.8,59]]);
+  q(c,50,62,50,67,46,68); q(c,50,62,50,67,54,68);
+}},
+{name:'コアラ',cat:'どうぶつ',draw:function(c){
+  circle(c,24,40,12); circle(c,76,40,12);
+  circle(c,24,40,6); circle(c,76,40,6);
+  circle(c,50,58,26);
+  ellip(c,50,58,5,8);
+  eyes2(c,12,52,3);
+  arc2(c,50,70,6,25,155);
+}},
+{name:'ぶた',cat:'どうぶつ',draw:function(c){
+  circle(c,50,56,27);
+  poly(c,[[30,35],[24,17],[45,27]]);
+  poly(c,[[70,35],[76,17],[55,27]]);
+  ellip(c,50,60,10,7);
+  ellip(c,46.5,60,1.6,2.6); ellip(c,53.5,60,1.6,2.6);
+  eyes2(c,13,50,3.2);
+  circle(c,29,64,4); circle(c,71,64,4);
+}},
+{name:'ねずみ',cat:'どうぶつ',draw:function(c){
+  circle(c,27,31,12); circle(c,73,31,12);
+  circle(c,27,31,6); circle(c,73,31,6);
+  circle(c,50,58,24);
+  eyes2(c,9,52,3);
+  circle(c,50,61,2.6);
+  q(c,50,64,50,67,46,68); q(c,50,64,50,67,54,68);
+  rrect(c,46.8,68,6.4,5,1); line(c,50,68,50,73);
+  line(c,28,58,40,60); line(c,29,66,40,63);
+  line(c,72,58,60,60); line(c,71,66,60,63);
+}},
+{name:'とら',cat:'どうぶつ',draw:function(c){
+  poly(c,[[30,36],[25,13],[46,28]]);
+  poly(c,[[70,36],[75,13],[54,28]]);
+  circle(c,50,56,27);
+  line(c,44,31,45,38); line(c,50,29,50,37); line(c,56,31,55,38);
+  line(c,24,52,32,54); line(c,25,60,33,60);
+  line(c,76,52,68,54); line(c,75,60,67,60);
+  eyes2(c,11,50,3.3);
+  poly(c,[[50,60],[46.8,56.5],[53.2,56.5]]);
+  q(c,50,60,50,65,45,66); q(c,50,60,50,65,55,66);
+}},
+{name:'ライオン',cat:'どうぶつ',draw:function(c){
+  var pts=[];
+  for(var i=0;i<20;i++){
+    var a=-Math.PI/2+i*Math.PI/10, r=i%2?41:33;
+    pts.push([50+Math.cos(a)*r,55+Math.sin(a)*r]);
+  }
+  poly(c,pts);
+  circle(c,50,55,26);
+  eyes2(c,10,49,3.3);
+  poly(c,[[50,59],[46.5,55.5],[53.5,55.5]]);
+  q(c,50,59,50,64,45,65); q(c,50,59,50,64,55,65);
+  circle(c,41,60,1); circle(c,44,63,1); circle(c,56,63,1); circle(c,59,60,1);
+}},
+{name:'きつね',cat:'どうぶつ',draw:function(c){
+  poly(c,[[29,40],[19,7],[49,27]]);
+  poly(c,[[71,40],[81,7],[51,27]]);
+  poly(c,[[31,33],[25,15],[44,27]]);
+  poly(c,[[69,33],[75,15],[56,27]]);
+  circle(c,50,57,26);
+  eyes2(c,11,51,3);
+  poly(c,[[50,67],[46.5,63],[53.5,63]]);
+  poly(c,[[24,58],[31,62],[24,66]],false);
+  poly(c,[[76,58],[69,62],[76,66]],false);
+}},
+{name:'かえる',cat:'どうぶつ',draw:function(c){
+  ellip(c,50,60,29,22);
+  circle(c,37,37,9); circle(c,63,37,9);
+  circle(c,37,37,3.5); circle(c,63,37,3.5);
+  circle(c,46,55,1.2); circle(c,54,55,1.2);
+  arc2(c,50,60,13,25,155);
+  circle(c,30,64,4.5); circle(c,70,64,4.5);
+}},
+{name:'ひつじ',cat:'どうぶつ',draw:function(c){
+  for(var i=0;i<9;i++){
+    var a=i*Math.PI*2/9-Math.PI/2;
+    circle(c,50+Math.cos(a)*24,52+Math.sin(a)*24,8);
+  }
+  ellip(c,50,56,15,18);
+  ellip(c,31,58,7,4.5,0.35); ellip(c,69,58,7,4.5,-0.35);
+  eyes2(c,7,54,2.8);
+  arc2(c,50,62,4.5,25,155);
+}},
+{name:'さる',cat:'どうぶつ',draw:function(c){
+  circle(c,50,54,26);
+  circle(c,23,54,8); circle(c,77,54,8);
+  circle(c,23,54,4); circle(c,77,54,4);
+  ellip(c,50,58,16,13);
+  eyes2(c,9,50,3);
+  circle(c,47,58,1.3); circle(c,53,58,1.3);
+  arc2(c,50,63,6,25,155);
+  q(c,46,29,50,20,54,29);
+}},
+{name:'うし',cat:'どうぶつ',draw:function(c){
+  poly(c,[[36,31],[26,15],[44,28]]);
+  poly(c,[[64,31],[74,15],[56,28]]);
+  circle(c,50,56,26);
+  ellip(c,24,44,8,5,0.4); ellip(c,76,44,8,5,-0.4);
+  ellip(c,50,65,13,9);
+  ellip(c,45,65,2,2.8); ellip(c,55,65,2,2.8);
+  eyes2(c,11,48,3.2);
+  circle(c,63,42,7);
+}},
+{name:'ハムスター',cat:'どうぶつ',draw:function(c){
+  circle(c,50,56,26);
+  circle(c,33,34,7); circle(c,67,34,7);
+  circle(c,33,34,3.5); circle(c,67,34,3.5);
+  circle(c,30,64,8.5); circle(c,70,64,8.5);
+  eyes2(c,10,50,3.2);
+  circle(c,50,58,2.2);
+  q(c,50,60,50,64,46,65); q(c,50,60,50,64,54,65);
+  rrect(c,47,64,6,4.5,1); line(c,50,64,50,68.5);
+}},
+{name:'ぞう',cat:'どうぶつ',draw:function(c){
+  circle(c,50,46,23);
+  ellip(c,23,48,11,14,0.15); ellip(c,77,48,11,14,-0.15);
+  eyes2(c,9,42,3);
+  c.beginPath(); c.moveTo(45,68);
+  c.quadraticCurveTo(42,78,46,84);
+  c.quadraticCurveTo(49,88,54,85);
+  c.lineTo(53,81);
+  c.quadraticCurveTo(49,81,51,74);
+  c.quadraticCurveTo(52.5,70,55,68);
+  c.stroke();
+  circle(c,34,54,4); circle(c,66,54,4);
+}},
+{name:'きりん',cat:'どうぶつ',draw:function(c){
+  ellip(c,50,24,13,11);
+  line(c,44,14,42,7); circle(c,42,6,2.5);
+  line(c,56,14,58,7); circle(c,58,6,2.5);
+  ellip(c,35,22,6,3.5,0.3); ellip(c,65,22,6,3.5,-0.3);
+  eyes2(c,6,22,2.6);
+  circle(c,46,30,1.2); circle(c,54,30,1.2);
+  line(c,43,34,36,84); line(c,57,34,64,84);
+  line(c,36,84,64,84);
+  circle(c,46,46,4); circle(c,54,58,4.5); circle(c,45,70,4);
+  circle(c,60,46,3); circle(c,61.5,58,3); circle(c,63,70,3);
+}},
+
+/* ============ とり・むし ============ */
+{name:'ひよこ',cat:'とり・むし',draw:function(c){
+  circle(c,50,48,20);
+  arc2(c,50,60,17,15,165);
+  poly(c,[[34,63],[39,56],[45,63],[51,56],[57,63],[63,56],[66,62]],false);
+  poly(c,[[46,46],[50,42.5],[54,46],[50,49.5]]);
+  eyes2(c,9,42,2.8);
+  ellip(c,31,48,5,9,0.35); ellip(c,69,48,5,9,-0.35);
+  q(c,48,29,52,20,58,26);
+}},
+{name:'ペンギン',cat:'とり・むし',draw:function(c){
+  ellip(c,50,54,21,27);
+  ellip(c,50,60,13,17);
+  ellip(c,26,56,5,13,0.35); ellip(c,74,56,5,13,-0.35);
+  poly(c,[[46,48],[54,48],[50,54]]);
+  eyes2(c,7,42,3);
+  poly(c,[[38,81],[33,88],[45,86]],false);
+  poly(c,[[62,81],[67,88],[55,86]],false);
+}},
+{name:'ふくろう',cat:'とり・むし',draw:function(c){
+  ellip(c,50,55,23,27);
+  poly(c,[[32,34],[28,22],[42,30]]);
+  poly(c,[[68,34],[72,22],[58,30]]);
+  circle(c,39,46,9); circle(c,61,46,9);
+  circle(c,39,46,3.5); circle(c,61,46,3.5);
+  poly(c,[[50,50],[46,55],[50,60],[54,55]]);
+  q(c,28,52,22,72,38,80);
+  q(c,72,52,78,72,62,80);
+  arc2(c,44,67,4,200,340); arc2(c,56,67,4,200,340);
+  arc2(c,50,74,4,200,340);
+  line(c,44,82,42,88); line(c,50,82,50,88); line(c,56,82,58,88);
+}},
+{name:'ことり',cat:'とり・むし',draw:function(c){
+  circle(c,46,54,19);
+  poly(c,[[28,48],[12,40],[16,54],[28,58]]);
+  poly(c,[[64,50],[73,53],[64,57]]);
+  ellip(c,46,57,10,7,0.3);
+  circle(c,54,48,2.8);
+  line(c,42,73,40,84); line(c,50,72,50,84);
+  line(c,28,85,76,84);
+  q(c,66,84,72,80,76,76);
+}},
+{name:'あひる',cat:'とり・むし',draw:function(c){
+  ellip(c,54,60,22,14);
+  circle(c,36,42,11);
+  poly(c,[[26,38],[13,43],[26,48]]);
+  circle(c,34,39,2.5);
+  ellip(c,58,60,11,7,0.2);
+  poly(c,[[74,54],[82,48],[76,62]],false);
+  q(c,16,82,26,76,36,82); q(c,36,82,46,88,56,82); q(c,56,82,66,76,76,82);
+}},
+{name:'ちょうちょ',cat:'とり・むし',draw:function(c){
+  ellip(c,50,52,4,15);
+  circle(c,50,31,5);
+  q(c,47,27,42,18,38,16); circle(c,37,15,1.5);
+  q(c,53,27,58,18,62,16); circle(c,63,15,1.5);
+  c.beginPath(); c.moveTo(46,44); c.bezierCurveTo(15,8,2,40,46,56); c.closePath(); c.stroke();
+  c.beginPath(); c.moveTo(54,44); c.bezierCurveTo(85,8,98,40,54,56); c.closePath(); c.stroke();
+  c.beginPath(); c.moveTo(47,58); c.bezierCurveTo(18,78,36,94,48,64); c.closePath(); c.stroke();
+  c.beginPath(); c.moveTo(53,58); c.bezierCurveTo(82,78,64,94,52,64); c.closePath(); c.stroke();
+  circle(c,26,36,5); circle(c,74,36,5);
+}},
+{name:'てんとうむし',cat:'とり・むし',draw:function(c){
+  circle(c,50,58,22);
+  circle(c,50,34,9);
+  q(c,46,27,42,20,38,18); circle(c,37,17,1.5);
+  q(c,54,27,58,20,62,18); circle(c,63,17,1.5);
+  line(c,50,37,50,80);
+  circle(c,40,50,3.5); circle(c,60,50,3.5);
+  circle(c,38,66,3.5); circle(c,62,66,3.5);
+  circle(c,50,72,3.5);
+  circle(c,47,32,1.2); circle(c,53,32,1.2);
+}},
+{name:'はち',cat:'とり・むし',draw:function(c){
+  ellip(c,37,38,11,6,-0.55); ellip(c,63,38,11,6,0.55);
+  circle(c,50,58,17);
+  q(c,34,54,50,58,66,54);
+  q(c,36,64,50,68,64,64);
+  poly(c,[[46,74],[50,83],[54,74]],false);
+  eyes2(c,6,52,2.6);
+  arc2(c,50,56,3,25,155);
+  q(c,45,42,42,36,38,34); q(c,55,42,58,36,62,34);
+}},
+{name:'いもむし',cat:'とり・むし',draw:function(c){
+  circle(c,24,62,11);
+  circle(c,38,66,9); circle(c,51,68,9); circle(c,64,70,8.5); circle(c,76,72,8);
+  circle(c,21,59,2.2); circle(c,28,59,2.2);
+  arc2(c,24,64,3,25,155);
+  q(c,20,52,16,44,13,42); circle(c,12,41,1.5);
+  q(c,28,52,32,44,35,42); circle(c,36,41,1.5);
+  line(c,14,86,88,84);
+}},
+{name:'かたつむり',cat:'とり・むし',draw:function(c){
+  c.beginPath(); c.moveTo(30,38);
+  c.quadraticCurveTo(18,40,20,52);
+  c.quadraticCurveTo(22,64,36,66);
+  c.lineTo(74,66);
+  c.quadraticCurveTo(84,66,80,58);
+  c.stroke();
+  circle(c,58,48,17);
+  arc2(c,58,48,11,0,300); arc2(c,56,46,5.5,0,300);
+  q(c,24,40,20,30,17,27); circle(c,16,26,2);
+  q(c,30,40,30,30,33,27); circle(c,34,26,2);
+  circle(c,24,46,1.8);
+  line(c,12,68,88,68);
+}},
+{name:'とんぼ',cat:'とり・むし',draw:function(c){
+  circle(c,50,24,6);
+  circle(c,46,20,2.5); circle(c,54,20,2.5);
+  circle(c,50,35,6);
+  rrect(c,47,42,6,36,3);
+  line(c,47,52,53,52); line(c,47,62,53,62); line(c,47,70,53,70);
+  ellip(c,31,34,15,4.5,-0.08); ellip(c,69,34,15,4.5,0.08);
+  ellip(c,33,44,13,4,-0.12); ellip(c,67,44,13,4,0.12);
+}},
+{name:'はりねずみ',cat:'とり・むし',draw:function(c){
+  var pts=[];
+  for(var i=0;i<=14;i++){
+    var a=Math.PI*(1.05-i*1.15/14), r=i%2?35:22;
+    pts.push([48+Math.cos(a)*r,58-Math.sin(a)*r*0.9]);
+  }
+  poly(c,pts,false);
+  circle(c,48,58,22);
+  poly(c,[[66,48],[84,58],[66,70]],false);
+  circle(c,84,58,2.5);
+  circle(c,60,54,2.8);
+  arc2(c,64,62,3,25,155);
+  line(c,38,84,38,80); line(c,56,84,56,80);
+  line(c,14,86,88,86);
+}},
+
+/* ============ うみのいきもの ============ */
+{name:'さかな',cat:'うみのいきもの',draw:function(c){
+  ellip(c,44,50,27,17);
+  c.beginPath(); c.moveTo(69,50); c.lineTo(88,33); c.quadraticCurveTo(83,50,88,67); c.closePath(); c.stroke();
+  circle(c,30,44,3.5);
+  q(c,44,33.5,50,18,58,35.5);
+  q(c,47,33.4,50,52,49,66.8);
+  q(c,57,34.9,60,50,58,65.2);
+  circle(c,80,18,4); circle(c,88,10,3); circle(c,73,9,2.5);
+}},
+{name:'イルカ',cat:'うみのいきもの',draw:function(c){
+  c.beginPath(); c.moveTo(18,62);
+  c.quadraticCurveTo(32,26,66,38);
+  c.quadraticCurveTo(80,44,86,54);
+  c.quadraticCurveTo(76,58,66,56);
+  c.quadraticCurveTo(58,74,30,72);
+  c.quadraticCurveTo(22,70,18,62);
+  c.closePath(); c.stroke();
+  poly(c,[[44,33],[52,17],[57,34]],false);
+  poly(c,[[52,57],[46,71],[60,61]],false);
+  poly(c,[[20,58],[7,48],[13,62],[6,73],[20,67]],false);
+  circle(c,70,46,2.5);
+  q(c,20,84,28,78,36,84); q(c,36,84,44,90,52,84); q(c,52,84,60,78,68,84);
+}},
+{name:'くじら',cat:'うみのいきもの',draw:function(c){
+  ellip(c,45,58,28,17);
+  poly(c,[[71,52],[86,40],[80,55],[88,64],[71,62]],false);
+  circle(c,28,54,2.5);
+  q(c,20,62,26,67,34,65);
+  q(c,37,40,32,32,28,27);
+  q(c,37,40,39,30,44,26);
+  circle(c,27,23,2.2); circle(c,36,18,2.5); circle(c,44,22,2);
+  q(c,24,68,34,75,48,74);
+  q(c,28,64,36,70,46,70);
+}},
+{name:'たこ',cat:'うみのいきもの',draw:function(c){
+  circle(c,50,40,17);
+  eyes2(c,7,40,2.8);
+  arc2(c,50,46,4,25,155);
+  circle(c,40,46,2.5); circle(c,60,46,2.5);
+  q(c,35,52,24,64,22,80);
+  q(c,43,56,38,70,32,84);
+  q(c,50,57,50,72,46,86);
+  q(c,57,56,62,70,66,84);
+  q(c,65,52,76,64,76,80);
+  circle(c,80,30,2.5); circle(c,86,22,2);
+}},
+{name:'かに',cat:'うみのいきもの',draw:function(c){
+  ellip(c,50,58,17,12);
+  line(c,44,47,40,38); circle(c,40,36,3.2);
+  line(c,56,47,60,38); circle(c,60,36,3.2);
+  arc2(c,50,60,4,25,155);
+  circle(c,44,56,2); circle(c,56,56,2);
+  circle(c,25,42,7.5); line(c,24,41,30,35);
+  circle(c,75,42,7.5); line(c,76,41,70,35);
+  line(c,35,52,29,47); line(c,65,52,71,47);
+  q(c,36,66,28,72,24,78); q(c,40,69,34,76,32,82);
+  q(c,64,66,72,72,76,78); q(c,60,69,66,76,68,82);
+}},
+{name:'かめ',cat:'うみのいきもの',draw:function(c){
+  arc2(c,50,58,24,180,360);
+  line(c,26,58,74,58);
+  q(c,26,58,50,70,74,58);
+  line(c,38,58,42,42); line(c,62,58,58,42); line(c,42,42,58,42);
+  circle(c,81,52,7);
+  circle(c,83,50,1.8);
+  arc2(c,82,54,2,25,155);
+  ellip(c,38,68,5,6.5,0.25); ellip(c,60,68,5,6.5,-0.25);
+  poly(c,[[26,60],[18,64],[26,66]],false);
+}},
+{name:'たつのおとしご',cat:'うみのいきもの',draw:function(c){
+  ellip(c,46,26,9,7,0.3);
+  rrect(c,26,23,14,5,2.5);
+  poly(c,[[42,17],[45,11],[48,17],[51,12],[54,18]],false);
+  circle(c,48,24,2);
+  c.beginPath(); c.moveTo(53,31);
+  c.quadraticCurveTo(63,40,58,54);
+  c.quadraticCurveTo(54,64,44,66);
+  c.quadraticCurveTo(34,68,36,76);
+  c.stroke();
+  c.beginPath(); c.moveTo(42,32);
+  c.quadraticCurveTo(50,42,47,52);
+  c.quadraticCurveTo(45,58,40,60);
+  c.stroke();
+  circle(c,38,78,5); circle(c,40,77,2);
+  ellip(c,59,42,4,8,0.3);
+  line(c,45,38,50,40); line(c,44,44,48,46); line(c,42,50,46,52);
+  circle(c,66,20,2); circle(c,72,28,1.6); circle(c,68,60,2);
+}},
+{name:'くらげ',cat:'うみのいきもの',draw:function(c){
+  arc2(c,50,48,22,180,360);
+  arc2(c,33.5,48,5.5,0,180); arc2(c,44.5,48,5.5,0,180);
+  arc2(c,55.5,48,5.5,0,180); arc2(c,66.5,48,5.5,0,180);
+  eyes2(c,7,40,2.5);
+  arc2(c,50,42,3.5,25,155);
+  c.beginPath(); c.moveTo(36,55); c.quadraticCurveTo(30,64,36,72); c.quadraticCurveTo(42,80,36,88); c.stroke();
+  c.beginPath(); c.moveTo(45,56); c.quadraticCurveTo(41,66,46,74); c.quadraticCurveTo(50,80,45,88); c.stroke();
+  c.beginPath(); c.moveTo(55,56); c.quadraticCurveTo(59,66,54,74); c.quadraticCurveTo(50,80,55,88); c.stroke();
+  c.beginPath(); c.moveTo(64,55); c.quadraticCurveTo(70,64,64,72); c.quadraticCurveTo(58,80,64,88); c.stroke();
+  circle(c,80,26,2.5); circle(c,86,34,2);
+}},
+{name:'ひとで',cat:'うみのいきもの',draw:function(c){
+  starP(c,50,54,30,13.5);
+  eyes2(c,6,50,2.5);
+  arc2(c,50,56,3.5,25,155);
+  circle(c,50,32,2); circle(c,70.9,47.2,2); circle(c,62.9,71.8,2);
+  circle(c,37.1,71.8,2); circle(c,29.1,47.2,2);
+}},
+{name:'かいがら',cat:'うみのいきもの',draw:function(c){
+  arc2(c,50,58,26,195,345);
+  line(c,24.9,51.3,50,80); line(c,75.1,51.3,50,80);
+  line(c,50,78,50+26*Math.cos(215*Math.PI/180)*0.93,58+26*Math.sin(215*Math.PI/180)*0.93);
+  line(c,50,78,50+26*Math.cos(245*Math.PI/180)*0.93,58+26*Math.sin(245*Math.PI/180)*0.93);
+  line(c,50,78,50,32.7);
+  line(c,50,78,50+26*Math.cos(295*Math.PI/180)*0.93,58+26*Math.sin(295*Math.PI/180)*0.93);
+  line(c,50,78,50+26*Math.cos(325*Math.PI/180)*0.93,58+26*Math.sin(325*Math.PI/180)*0.93);
+  circle(c,50,81,3);
+  circle(c,22,74,2.5); circle(c,78,72,2.5); circle(c,30,24,2);
+}}
 ];
+
+/* ===== nurie line-art library part B ===== */
+var PICS_B=[
+/* ============ ゆめかわ ============ */
+{name:'ユニコーン',cat:'ゆめかわ',draw:function(c){
+  ellip(c,44,63,21,12);
+  rrect(c,28,71,5.5,16,2.5); rrect(c,37,73,5.5,15,2.5);
+  rrect(c,50,73,5.5,15,2.5); rrect(c,58,71,5.5,16,2.5);
+  line(c,28,83,33.5,83); line(c,37,84,42.5,84);
+  line(c,50,84,55.5,84); line(c,58,83,63.5,83);
+  q(c,55,53,58,42,63,35);
+  q(c,64,57,68,48,73,39);
+  ellip(c,70,32,9.5,7,0.15);
+  poly(c,[[73,25],[79,8],[78,26]]);
+  poly(c,[[64,26],[62,17],[69,24]]);
+  circle(c,69,31,1.7);
+  circle(c,77,34,1);
+  circle(c,61,28,4); circle(c,58,35,4.5); circle(c,55,42,4.5); circle(c,52,49,4.5);
+  q(c,23,58,10,60,14,74);
+  circle(c,17,66,4.5); circle(c,13,74,3);
+  starP(c,28,30,5,2.2); starP(c,88,54,4,1.8);
+}},
+{name:'ペガサス',cat:'ゆめかわ',draw:function(c){
+  ellip(c,44,63,21,12);
+  rrect(c,28,71,5.5,16,2.5); rrect(c,37,73,5.5,15,2.5);
+  rrect(c,50,73,5.5,15,2.5); rrect(c,58,71,5.5,16,2.5);
+  line(c,28,83,33.5,83); line(c,37,84,42.5,84);
+  line(c,50,84,55.5,84); line(c,58,83,63.5,83);
+  q(c,55,53,58,42,63,35);
+  q(c,64,57,68,48,73,39);
+  ellip(c,70,32,9.5,7,0.15);
+  poly(c,[[64,26],[62,17],[69,24]]);
+  circle(c,69,31,1.7); circle(c,77,34,1);
+  circle(c,61,28,4); circle(c,58,35,4.5);
+  c.beginPath(); c.moveTo(52,54);
+  c.quadraticCurveTo(42,24,20,28);
+  c.quadraticCurveTo(24,38,32,42);
+  c.quadraticCurveTo(38,48,45,51);
+  c.quadraticCurveTo(49,53,52,54);
+  c.closePath(); c.stroke();
+  q(c,26,32,36,42,46,50);
+  q(c,23,58,10,60,14,74);
+  circle(c,17,66,4.5); circle(c,13,74,3);
+  starP(c,86,20,5,2.2); starP(c,88,56,4,1.8);
+}},
+{name:'にじ',cat:'ゆめかわ',draw:function(c){
+  arc2(c,50,74,34,180,360);
+  arc2(c,50,74,27,180,360);
+  arc2(c,50,74,20,180,360);
+  cloud(c,20,74,8); cloud(c,80,74,8);
+  starP(c,20,30,5,2.2); starP(c,80,26,5,2.2);
+  circle(c,50,20,2.5); circle(c,32,16,2);
+}},
+{name:'おしろ',cat:'ゆめかわ',draw:function(c){
+  c.strokeRect(38,38,24,46);
+  poly(c,[[35,38],[50,20],[65,38]]);
+  line(c,50,20,50,10);
+  poly(c,[[50,10],[62,13],[50,16]]);
+  c.strokeRect(22,50,12,34);
+  c.strokeRect(66,50,12,34);
+  poly(c,[[20,50],[28,36],[36,50]]);
+  poly(c,[[64,50],[72,36],[80,50]]);
+  c.beginPath(); c.moveTo(44,84); c.lineTo(44,72);
+  c.arc(50,72,6,Math.PI,0); c.lineTo(56,84); c.stroke();
+  circle(c,28,58,2.5); circle(c,72,58,2.5); circle(c,50,48,2.5);
+  heart(c,50,60,4);
+  line(c,10,84,90,84);
+}},
+{name:'おひめさま',cat:'ゆめかわ',draw:function(c){
+  circle(c,50,28,12);
+  poly(c,[[43,17],[43,10],[47,15],[50,8],[53,15],[57,10],[57,17]]);
+  q(c,38,26,34,40,38,50); q(c,62,26,66,40,62,50);
+  circle(c,38,52,4); circle(c,62,52,4);
+  eyes2(c,5,28,2);
+  arc2(c,50,32,3,25,155);
+  poly(c,[[45,40],[55,40],[57,50],[43,50]]);
+  q(c,43,50,32,62,28,80);
+  q(c,57,50,68,62,72,80);
+  arc2(c,33.5,80,5.5,0,180); arc2(c,44.5,80,5.5,0,180);
+  arc2(c,55.5,80,5.5,0,180); arc2(c,66.5,80,5.5,0,180);
+  line(c,45,42,36,52); circle(c,35,53,2);
+  line(c,55,42,64,52); circle(c,65,53,2);
+  heart(c,50,64,4.5);
+}},
+{name:'にんぎょ',cat:'ゆめかわ',draw:function(c){
+  circle(c,50,24,10);
+  arc2(c,50,22,10.5,190,350);
+  q(c,41,19,30,26,32,44); q(c,32,44,30,56,37,60);
+  q(c,59,19,70,26,68,44); q(c,68,44,70,56,63,60);
+  eyes2(c,4.5,25,1.8);
+  arc2(c,50,28,2.5,25,155);
+  poly(c,[[44,34],[56,34],[54,48],[46,48]]);
+  circle(c,47,38,3); circle(c,53,38,3);
+  line(c,44,36,35,45); circle(c,34,46,2);
+  line(c,56,36,65,45); circle(c,66,46,2);
+  q(c,46,48,42,62,47,74); q(c,54,48,56,62,49,76);
+  poly(c,[[48,76],[36,82],[44,89]],false);
+  poly(c,[[48,76],[61,84],[52,90]],false);
+  arc2(c,47,56,2.5,0,180); arc2(c,52,60,2.5,0,180); arc2(c,48,65,2.5,0,180);
+  q(c,14,86,22,80,30,86); q(c,66,88,74,82,82,88);
+  circle(c,76,30,2.5); circle(c,82,38,2);
+}},
+{name:'ようせい',cat:'ゆめかわ',draw:function(c){
+  circle(c,50,25,9);
+  arc2(c,50,22,11,180,340);
+  circle(c,50,12,3.5);
+  eyes2(c,4,25,1.7);
+  arc2(c,50,28,2.5,25,155);
+  ellip(c,31,42,13,7,-0.5); ellip(c,69,42,13,7,0.5);
+  ellip(c,33,52,8,5,-0.7); ellip(c,67,52,8,5,0.7);
+  poly(c,[[50,34],[39,58],[44,55],[48,59],[52,55],[56,59],[61,55],[50,34]],false);
+  line(c,44,40,36,48);
+  line(c,56,40,66,36);
+  starP(c,70,30,6,2.6);
+  line(c,46,59,44,72); line(c,54,59,56,72);
+  circle(c,43,74,1.8); circle(c,57,74,1.8);
+  starP(c,22,66,4,1.8); starP(c,80,64,4,1.8);
+}},
+{name:'まほうのつえ',cat:'ゆめかわ',draw:function(c){
+  line(c,26,80,54,42); line(c,31,84,59,46);
+  line(c,26,80,31,84); line(c,54,42,59,46);
+  starP(c,64,32,14,6);
+  q(c,54,48,42,58,46,70);
+  q(c,58,52,52,64,58,74);
+  starP(c,34,26,4.5,2); starP(c,80,58,4.5,2);
+  circle(c,24,44,2); circle(c,84,40,2); circle(c,70,76,2);
+}},
+{name:'おうかん',cat:'ゆめかわ',draw:function(c){
+  poly(c,[[28,64],[24,34],[38,48],[50,28],[62,48],[76,34],[72,64]]);
+  rrect(c,27,64,46,11,5);
+  circle(c,24,31,2.5); circle(c,50,25,2.5); circle(c,76,31,2.5);
+  circle(c,38,69.5,2.5); circle(c,50,69.5,2.5); circle(c,62,69.5,2.5);
+  heart(c,50,50,4);
+}},
+{name:'ティアラ',cat:'ゆめかわ',draw:function(c){
+  arc2(c,50,96,40,240,300);
+  arc2(c,50,102,40,243,297);
+  line(c,30,61.4,30.9,67.4); line(c,70,61.4,69.1,67.4);
+  poly(c,[[44,57],[50,40],[56,57]],false);
+  poly(c,[[33,61],[30,48],[41,58]],false);
+  poly(c,[[67,61],[70,48],[59,58]],false);
+  circle(c,50,50,2.8); circle(c,34,55,2); circle(c,66,55,2);
+  circle(c,50,62,2.2);
+  starP(c,22,34,4.5,2); starP(c,78,34,4.5,2);
+}},
+{name:'ゆびわ',cat:'ゆめかわ',draw:function(c){
+  circle(c,50,62,16); circle(c,50,62,12);
+  poly(c,[[40,40],[50,30],[60,40],[50,49]]);
+  line(c,40,40,60,40);
+  line(c,45,35,45,40); line(c,55,35,55,40);
+  line(c,50,26,50,20); line(c,38,28,34,23); line(c,62,28,66,23);
+  circle(c,28,50,2); circle(c,72,50,2);
+}},
+{name:'ハート',cat:'ゆめかわ',draw:function(c){
+  heart(c,50,52,32);
+  heart(c,50,52,16);
+  starP(c,24,26,5,2.2); starP(c,78,28,4.5,2);
+  circle(c,18,56,2); circle(c,82,60,2); circle(c,68,14,2);
+}},
+{name:'リボン',cat:'ゆめかわ',draw:function(c){
+  c.beginPath(); c.moveTo(45.5,49);
+  c.quadraticCurveTo(20,36,22,54);
+  c.quadraticCurveTo(23,68,45.5,55.5);
+  c.stroke();
+  c.beginPath(); c.moveTo(54.5,49);
+  c.quadraticCurveTo(80,36,78,54);
+  c.quadraticCurveTo(77,68,54.5,55.5);
+  c.stroke();
+  poly(c,[[46,56],[36,80],[45,76]]);
+  poly(c,[[54,56],[64,80],[55,76]]);
+  circle(c,50,52,6);
+  line(c,29,45,30,54); line(c,71,45,70,54);
+  circle(c,24,26,2); circle(c,76,26,2); heart(c,50,24,5);
+}},
+{name:'ドレス',cat:'ゆめかわ',draw:function(c){
+  poly(c,[[42,28],[58,28],[60,46],[40,46]]);
+  line(c,44,28,44,22); line(c,56,28,56,22);
+  q(c,44,32,50,36,56,32);
+  q(c,40,46,29,62,25,80);
+  q(c,60,46,71,62,75,80);
+  arc2(c,31.5,80,6.5,0,180); arc2(c,44,80,6.5,0,180);
+  arc2(c,56.5,80,6.5,0,180); arc2(c,69,80,6.5,0,180);
+  line(c,40,46,60,46);
+  circle(c,46,49,2); circle(c,54,49,2);
+  heart(c,50,38,4);
+  starP(c,20,30,4.5,2); starP(c,80,32,4.5,2);
+}},
+{name:'ガラスのくつ',cat:'ゆめかわ',draw:function(c){
+  c.beginPath();
+  c.moveTo(18,68);
+  c.quadraticCurveTo(17,60,26,58);
+  c.quadraticCurveTo(40,55,52,44);
+  c.quadraticCurveTo(56,40,62,38);
+  c.lineTo(72,38);
+  c.quadraticCurveTo(75,52,72,60);
+  c.lineTo(75,82);
+  c.lineTo(68,82);
+  c.lineTo(66,62);
+  c.quadraticCurveTo(60,66,52,66);
+  c.quadraticCurveTo(34,72,18,68);
+  c.closePath(); c.stroke();
+  heart(c,27,62,3.5);
+  circle(c,60,46,1.5); circle(c,54,52,1.5); circle(c,46,57,1.5);
+  starP(c,80,22,5,2.2); starP(c,22,32,4,1.8);
+  circle(c,42,26,2);
+}},
+{name:'ほしとつき',cat:'ゆめかわ',draw:function(c){
+  c.beginPath();
+  c.arc(40,50,26,-1.15,1.15);
+  c.arc(56,50,20,1.35,-1.35,true);
+  c.closePath(); c.stroke();
+  circle(c,44,44,2);
+  arc2(c,46,54,3,25,155);
+  starP(c,74,26,8,3.5); starP(c,80,64,6,2.6); starP(c,24,16,5,2.2);
+  circle(c,84,44,2); circle(c,68,80,2);
+}},
+
+/* ============ スイーツ ============ */
+{name:'バースデーケーキ',cat:'スイーツ',draw:function(c){
+  ellip(c,50,82,32,5);
+  rrect(c,26,64,48,18,4);
+  rrect(c,34,48,32,16,4);
+  arc2(c,40,48,5,0,180); arc2(c,50,48,5,0,180); arc2(c,60,48,5,0,180);
+  arc2(c,32,64,5.5,0,180); arc2(c,44,64,5.5,0,180);
+  arc2(c,56,64,5.5,0,180); arc2(c,68,64,5.5,0,180);
+  rrect(c,38,38,4,10,1.5); rrect(c,48,36,4,12,1.5); rrect(c,58,38,4,10,1.5);
+  ellip(c,40,33,2,3.5); ellip(c,50,30,2,3.5); ellip(c,60,33,2,3.5);
+  circle(c,38,74,1.5); circle(c,50,76,1.5); circle(c,62,74,1.5);
+}},
+{name:'カップケーキ',cat:'スイーツ',draw:function(c){
+  poly(c,[[34,58],[66,58],[61,82],[39,82]]);
+  line(c,43,58,45,82); line(c,50,58,50,82); line(c,57,58,55,82);
+  arc2(c,37,58,7,180,360); arc2(c,50,58,7,180,360); arc2(c,63,58,7,180,360);
+  arc2(c,43,48,7,180,360); arc2(c,57,48,7,180,360);
+  arc2(c,50,38,7,180,360);
+  circle(c,50,27,4); line(c,50,23,52,18);
+  circle(c,42,44,1.2); circle(c,58,44,1.2); circle(c,50,52,1.2);
+}},
+{name:'ソフトクリーム',cat:'スイーツ',draw:function(c){
+  arc2(c,50,47,15,180,360);
+  arc2(c,50,37,11,180,360);
+  arc2(c,50,28,7,180,360);
+  q(c,46,21,50,12,56,20);
+  poly(c,[[35,47],[65,47],[50,88]]);
+  line(c,39,57,58,66); line(c,43,68,55,74);
+  line(c,61,57,42,66); line(c,57,68,45,74);
+}},
+{name:'アイスキャンディー',cat:'スイーツ',draw:function(c){
+  rrect(c,36,18,28,48,12);
+  q(c,36,32,44,38,64,32);
+  eyes2(c,6,44,2.2);
+  arc2(c,50,48,3,25,155);
+  rrect(c,46,66,8,16,3.5);
+  circle(c,26,30,2); circle(c,74,26,2); starP(c,76,50,4,1.8);
+}},
+{name:'ドーナツ',cat:'スイーツ',draw:function(c){
+  circle(c,50,54,24);
+  circle(c,50,54,9);
+  var pts=[];
+  for(var i=0;i<24;i++){
+    var a=i*Math.PI/12, r=i%2?18.5:16;
+    pts.push([50+Math.cos(a)*r,54+Math.sin(a)*r]);
+  }
+  poly(c,pts);
+  line(c,40,38,44,41); line(c,60,36,58,40); line(c,66,58,62,60);
+  line(c,36,64,40,62); line(c,52,70,54,66);
+}},
+{name:'キャンディー',cat:'スイーツ',draw:function(c){
+  circle(c,50,52,14);
+  arc2(c,50,52,9,0,300);
+  arc2(c,50,52,4.5,90,390);
+  poly(c,[[36,46],[22,38],[24,52],[22,66],[36,58]]);
+  poly(c,[[64,46],[78,38],[76,52],[78,66],[64,58]]);
+  circle(c,30,24,2); circle(c,72,80,2);
+}},
+{name:'プリン',cat:'スイーツ',draw:function(c){
+  c.beginPath(); c.moveTo(34,48);
+  c.quadraticCurveTo(33,70,42,72);
+  c.lineTo(58,72);
+  c.quadraticCurveTo(67,70,66,48);
+  c.stroke();
+  q(c,34,48,50,42,66,48);
+  c.beginPath(); c.moveTo(34,48);
+  c.quadraticCurveTo(40,56,45,53);
+  c.quadraticCurveTo(50,50,55,55);
+  c.quadraticCurveTo(60,60,66,48);
+  c.stroke();
+  ellip(c,50,76,26,5);
+  circle(c,50,38,4.5);
+  q(c,50,33,48,28,50,24);
+}},
+{name:'マカロン',cat:'スイーツ',draw:function(c){
+  ellip(c,50,44,22,10);
+  ellip(c,50,60,22,10);
+  poly(c,[[28,52],[33,49],[38,54],[43,49],[48,54],[53,49],[58,54],[63,49],[68,52]],false);
+  heart(c,50,42,4);
+  circle(c,24,28,2); circle(c,78,30,2);
+}},
+{name:'チョコレート',cat:'スイーツ',draw:function(c){
+  rrect(c,28,32,44,44,5);
+  line(c,42,32,42,76); line(c,57,32,57,76);
+  line(c,28,47,72,47); line(c,28,61,72,61);
+  circle(c,72,32,7);
+  heart(c,35,39.5,3);
+}},
+{name:'パフェ',cat:'スイーツ',draw:function(c){
+  poly(c,[[32,38],[68,38],[58,72],[42,72]],false);
+  line(c,50,72,50,80);
+  rrect(c,42,80,16,4,2);
+  q(c,35,50,50,55,65,50);
+  q(c,38,61,50,66,62,61);
+  arc2(c,38,38,6,180,360); arc2(c,50,36,7,180,360); arc2(c,62,38,6,180,360);
+  circle(c,50,25,4);
+  line(c,62,32,72,14); line(c,66,33,76,15); line(c,62,32,66,33); line(c,72,14,76,15);
+  circle(c,44,45,1.5); circle(c,56,45,1.5); circle(c,50,58,1.5);
+}},
+{name:'クッキー',cat:'スイーツ',draw:function(c){
+  circle(c,50,54,23);
+  circle(c,40,46,3); circle(c,58,44,3); circle(c,62,60,3);
+  circle(c,38,62,3); circle(c,50,70,2.5);
+  eyes2(c,7,50,2.2);
+  arc2(c,50,55,3.5,25,155);
+  circle(c,22,26,2); circle(c,78,28,2);
+}},
+{name:'ジュース',cat:'スイーツ',draw:function(c){
+  rrect(c,34,36,32,42,4);
+  line(c,34,46,66,46);
+  line(c,56,36,64,16); line(c,60,36,68,17);
+  line(c,64,16,68,17);
+  arc2(c,34,40,9,90,270);
+  line(c,34,31,34,49);
+  line(c,34,40,26,36); line(c,34,40,25,42);
+  circle(c,44,58,1.6); circle(c,52,64,1.6); circle(c,48,70,1.6);
+  circle(c,58,54,1.6);
+}},
+
+/* ============ くだもの ============ */
+{name:'いちご',cat:'くだもの',draw:function(c){
+  c.beginPath(); c.moveTo(32,46);
+  c.quadraticCurveTo(30,72,50,82);
+  c.quadraticCurveTo(70,72,68,46);
+  c.quadraticCurveTo(60,38,50,40);
+  c.quadraticCurveTo(40,38,32,46);
+  c.closePath(); c.stroke();
+  poly(c,[[38,42],[42,33],[46,41],[50,31],[54,41],[58,33],[62,42]],false);
+  line(c,50,31,50,24);
+  ellip(c,42,52,1.5,2.5); ellip(c,58,52,1.5,2.5);
+  ellip(c,45,64,1.5,2.5); ellip(c,55,64,1.5,2.5);
+  ellip(c,50,73,1.5,2.5);
+}},
+{name:'りんご',cat:'くだもの',draw:function(c){
+  circle(c,50,58,24);
+  q(c,44,36,50,40,56,36);
+  line(c,50,38,52,26);
+  ellip(c,60,26,8,4.5,0.5);
+  arc2(c,40,52,7,120,220);
+}},
+{name:'さくらんぼ',cat:'くだもの',draw:function(c){
+  circle(c,38,64,11); circle(c,62,68,11);
+  q(c,38,53,44,34,52,26);
+  q(c,62,57,56,38,52,26);
+  ellip(c,59,27,8,4,0.4);
+  arc2(c,34,60,4,120,220); arc2(c,58,64,4,120,220);
+}},
+{name:'もも',cat:'くだもの',draw:function(c){
+  circle(c,50,56,23);
+  q(c,50,33,44,48,47,68);
+  ellip(c,40,32,9,4,-0.6); ellip(c,60,32,9,4,0.6);
+  line(c,50,33,50,26);
+}},
+{name:'ぶどう',cat:'くだもの',draw:function(c){
+  line(c,51,38,51,26);
+  ellip(c,61,29,10,5,0.4);
+  circle(c,44,44,6.5); circle(c,58,44,6.5);
+  circle(c,37,54,6.5); circle(c,51,54,6.5); circle(c,65,54,6.5);
+  circle(c,44,64,6.5); circle(c,58,64,6.5);
+  circle(c,51,74,6.5);
+}},
+{name:'すいか',cat:'くだもの',draw:function(c){
+  arc2(c,50,64,30,180,360);
+  line(c,20,64,80,64);
+  arc2(c,50,64,25,180,360);
+  ellip(c,42,52,1.6,2.6,0.4); ellip(c,58,52,1.6,2.6,-0.4);
+  ellip(c,50,44,1.6,2.6); ellip(c,34,58,1.6,2.6,0.6); ellip(c,66,58,1.6,2.6,-0.6);
+}},
+{name:'みかん',cat:'くだもの',draw:function(c){
+  circle(c,50,58,22);
+  ellip(c,42,34,8,4,-0.5); ellip(c,58,34,8,4,0.5);
+  circle(c,50,36,2);
+  arc2(c,41,52,6,120,220);
+  circle(c,42,66,1); circle(c,50,70,1); circle(c,58,66,1);
+}},
+{name:'バナナ',cat:'くだもの',draw:function(c){
+  c.beginPath();
+  c.moveTo(24,36);
+  c.quadraticCurveTo(28,66,56,74);
+  c.quadraticCurveTo(72,78,82,66);
+  c.lineTo(77,60);
+  c.quadraticCurveTo(66,66,52,62);
+  c.quadraticCurveTo(34,56,32,36);
+  c.closePath(); c.stroke();
+  rrect(c,23,28,10,9,2);
+  q(c,34,42,42,58,58,66);
+}},
+{name:'パイナップル',cat:'くだもの',draw:function(c){
+  ellip(c,50,60,17,21);
+  line(c,37,50,64,74); line(c,34,60,58,80); line(c,42,44,67,66);
+  line(c,63,50,36,74); line(c,66,60,42,80); line(c,58,44,33,66);
+  poly(c,[[44,40],[34,20],[49,37]],false);
+  poly(c,[[48,37],[50,12],[54,36]],false);
+  poly(c,[[54,37],[64,20],[58,39]],false);
+}},
+{name:'メロン',cat:'くだもの',draw:function(c){
+  circle(c,50,58,24);
+  q(c,32,44,50,52,68,44);
+  q(c,28,60,50,68,72,60);
+  q(c,36,74,50,80,64,74);
+  q(c,40,38,46,58,40,76);
+  q(c,60,38,54,58,60,76);
+  line(c,50,34,50,26);
+  line(c,44,26,56,26);
+}},
+
+/* ============ のりもの ============ */
+{name:'ロケット',cat:'のりもの',draw:function(c){
+  c.beginPath(); c.moveTo(38,34); c.quadraticCurveTo(38,12,50,6);
+  c.quadraticCurveTo(62,12,62,34); c.lineTo(62,72); c.lineTo(38,72); c.closePath(); c.stroke();
+  circle(c,50,32,8);
+  line(c,38,52,62,52);
+  poly(c,[[38,56],[24,80],[38,74]]);
+  poly(c,[[62,56],[76,80],[62,74]]);
+  c.beginPath(); c.moveTo(42,73); c.quadraticCurveTo(44,86,50,92);
+  c.quadraticCurveTo(56,86,58,73); c.stroke();
+  circle(c,15,20,2.5); circle(c,84,42,2.5); circle(c,20,58,2); circle(c,88,14,2);
+}},
+{name:'くるま',cat:'のりもの',draw:function(c){
+  c.beginPath(); c.moveTo(28,58);
+  c.quadraticCurveTo(31,44,44,43);
+  c.lineTo(58,43);
+  c.quadraticCurveTo(69,44,72,58);
+  c.stroke();
+  rrect(c,16,56,68,16,7);
+  line(c,50,43,50,56);
+  q(c,33,47,40,46,44,46); line(c,44,46,44,56); line(c,33,50,33,56);
+  circle(c,32,74,8); circle(c,32,74,3.5);
+  circle(c,68,74,8); circle(c,68,74,3.5);
+  circle(c,20,62,2.5); circle(c,80,62,2.5);
+  line(c,10,84,90,84);
+}},
+{name:'バス',cat:'のりもの',draw:function(c){
+  rrect(c,16,34,68,40,8);
+  rrect(c,23,42,13,11,2); rrect(c,43,42,13,11,2); rrect(c,63,42,13,11,2);
+  line(c,16,60,84,60);
+  circle(c,32,76,7); circle(c,32,76,3);
+  circle(c,68,76,7); circle(c,68,76,3);
+  rrect(c,38,26,24,8,3);
+  circle(c,20,66,2.2); circle(c,80,66,2.2);
+  line(c,10,85,90,85);
+}},
+{name:'でんしゃ',cat:'のりもの',draw:function(c){
+  rrect(c,20,34,60,42,10);
+  rrect(c,27,42,17,15,3); rrect(c,56,42,17,15,3);
+  line(c,20,64,80,64);
+  circle(c,34,80,6); circle(c,66,80,6);
+  line(c,12,88,88,88);
+  line(c,44,34,38,24); line(c,56,34,62,24);
+  line(c,36,24,64,24);
+  circle(c,50,69,2.2);
+}},
+{name:'ヨット',cat:'のりもの',draw:function(c){
+  poly(c,[[24,68],[76,68],[66,80],[34,80]]);
+  line(c,50,22,50,68);
+  poly(c,[[47,26],[47,62],[28,62]]);
+  poly(c,[[53,28],[70,60],[53,60]]);
+  q(c,12,86,20,81,28,86); q(c,42,88,50,83,58,88); q(c,72,86,80,81,88,86);
+  circle(c,50,18,2.5);
+}},
+{name:'ひこうき',cat:'のりもの',draw:function(c){
+  ellip(c,50,54,30,10);
+  poly(c,[[26,48],[19,30],[34,46]]);
+  poly(c,[[46,58],[32,78],[52,63]]);
+  poly(c,[[46,50],[38,34],[54,48]]);
+  circle(c,42,52,2.2); circle(c,50,52,2.2); circle(c,58,52,2.2); circle(c,66,52,2.2);
+  q(c,74,49,80,52,74,57);
+  cloud(c,20,18,7); cloud(c,82,74,6);
+}},
+{name:'ききゅう',cat:'のりもの',draw:function(c){
+  circle(c,50,34,24);
+  ellip(c,50,34,10,24);
+  ellip(c,50,34,18,24);
+  line(c,36,53,43,70); line(c,64,53,57,70);
+  rrect(c,42,70,16,12,3);
+  line(c,42,76,58,76); line(c,50,70,50,82);
+  cloud(c,16,60,6); cloud(c,84,24,6);
+}},
+{name:'ヘリコプター',cat:'のりもの',draw:function(c){
+  ellip(c,44,58,18,13);
+  circle(c,49,55,5.5);
+  rrect(c,60,54,24,7,3.5);
+  circle(c,84,50,5); line(c,79,50,89,50); line(c,84,45,84,55);
+  line(c,14,36,74,36);
+  line(c,44,45,44,36);
+  circle(c,44,36,2);
+  line(c,30,76,58,76);
+  line(c,36,71,36,76); line(c,52,71,52,76);
+  cloud(c,84,78,5);
+}},
+
+/* ============ おそとのもの ============ */
+{name:'おうち',cat:'おそとのもの',draw:function(c){
+  c.strokeRect(25,45,45,40);
+  poly(c,[[20,45],[47.5,20],[75,45]]);
+  c.strokeRect(43,62,13,23); circle(c,53,74,1.5);
+  c.strokeRect(30,52,9,9); line(c,34.5,52,34.5,61); line(c,30,56.5,39,56.5);
+  c.strokeRect(59,52,9,9); line(c,63.5,52,63.5,61); line(c,59,56.5,68,56.5);
+  circle(c,86,14,6.5);
+  for(var i=0;i<8;i++){
+    var a=i*Math.PI/4;
+    line(c,86+Math.cos(a)*9,14+Math.sin(a)*9,86+Math.cos(a)*12,14+Math.sin(a)*12);
+  }
+  ellip(c,13,15,8,4.5); ellip(c,20,12,5,3.5);
+  line(c,5,85,95,85);
+}},
+{name:'おはな',cat:'おそとのもの',draw:function(c){
+  for(var i=0;i<6;i++){
+    var a=i*Math.PI/3-Math.PI/2;
+    ellip(c,50+Math.cos(a)*15,36+Math.sin(a)*15,8,12,a+Math.PI/2);
+  }
+  circle(c,50,36,8.5);
+  c.strokeRect(48,50,4,33);
+  ellip(c,38,68,9,4.5,-0.7);
+  ellip(c,62,74,9,4.5,0.7);
+  line(c,5,85,95,85);
+  circle(c,14,18,5);
+}},
+{name:'チューリップ',cat:'おそとのもの',draw:function(c){
+  c.beginPath(); c.moveTo(38,44);
+  c.quadraticCurveTo(35,62,50,64);
+  c.quadraticCurveTo(65,62,62,44);
+  c.lineTo(56,35); c.lineTo(50,44); c.lineTo(44,35);
+  c.closePath(); c.stroke();
+  line(c,50,64,50,86);
+  ellip(c,40,74,10,4,-0.85); ellip(c,60,78,10,4,0.85);
+  circle(c,20,24,2.5); circle(c,80,28,2.5);
+}},
+{name:'ひまわり',cat:'おそとのもの',draw:function(c){
+  for(var i=0;i<12;i++){
+    var a=i*Math.PI/6;
+    ellip(c,50+Math.cos(a)*20,42+Math.sin(a)*20,5.5,9.5,a+Math.PI/2);
+  }
+  circle(c,50,42,11);
+  line(c,44,38,56,46); line(c,44,46,56,38);
+  line(c,50,53,50,86);
+  ellip(c,40,72,10,4.5,-0.8); ellip(c,60,78,10,4.5,0.8);
+}},
+{name:'さくら',cat:'おそとのもの',draw:function(c){
+  for(var i=0;i<5;i++){
+    var a=i*Math.PI*2/5-Math.PI/2;
+    ellip(c,50+Math.cos(a)*12,50+Math.sin(a)*12,7,10.5,a+Math.PI/2);
+  }
+  circle(c,50,50,4.5);
+  for(var j=0;j<5;j++){
+    var b=j*Math.PI*2/5-Math.PI/2+Math.PI/5;
+    line(c,50+Math.cos(b)*5,50+Math.sin(b)*5,50+Math.cos(b)*9,50+Math.sin(b)*9);
+  }
+  circle(c,20,22,2); circle(c,80,26,2); circle(c,78,74,2); circle(c,22,76,2);
+}},
+{name:'き',cat:'おそとのもの',draw:function(c){
+  cloud(c,50,34,17);
+  line(c,45,52,43,84); line(c,55,52,57,84);
+  q(c,43,84,40,86,34,86); q(c,57,84,60,86,66,86);
+  circle(c,42,32,3); circle(c,58,28,3); circle(c,50,42,3);
+  line(c,8,86,92,86);
+}},
+{name:'きのこ',cat:'おそとのもの',draw:function(c){
+  arc2(c,50,46,26,180,360);
+  line(c,24,46,76,46);
+  circle(c,38,36,4); circle(c,56,30,4.5); circle(c,63,40,3);
+  c.beginPath(); c.moveTo(42,46); c.lineTo(40,68);
+  c.quadraticCurveTo(50,74,60,68); c.lineTo(58,46);
+  c.stroke();
+  eyes2(c,5,56,1.8);
+  arc2(c,50,60,2.5,25,155);
+  poly(c,[[20,86],[24,78],[28,86]],false);
+  poly(c,[[72,86],[76,78],[80,86]],false);
+  line(c,12,86,88,86);
+}},
+{name:'ゆきだるま',cat:'おそとのもの',draw:function(c){
+  rrect(c,42,12,16,13,2);
+  rrect(c,38,24,24,4,2);
+  circle(c,50,40,13);
+  eyes2(c,5,38,1.8);
+  poly(c,[[50,42],[59,44],[50,46]]);
+  circle(c,50,66,19);
+  circle(c,50,60,1.8); circle(c,50,68,1.8);
+  line(c,31,62,16,52); line(c,22,56,18,60);
+  line(c,69,62,84,52); line(c,78,56,82,60);
+  circle(c,20,24,1.5); circle(c,30,14,1.5); circle(c,72,20,1.5); circle(c,80,34,1.5);
+}},
+{name:'かさ',cat:'おそとのもの',draw:function(c){
+  arc2(c,50,46,28,180,360);
+  arc2(c,29,46,7,0,180); arc2(c,43,46,7,0,180);
+  arc2(c,57,46,7,0,180); arc2(c,71,46,7,0,180);
+  line(c,50,18,50,12);
+  line(c,50,53,50,76);
+  arc2(c,45,76,5,0,180);
+  line(c,50,26,32,44); line(c,50,26,68,44);
+  q(c,18,64,17,68,20,70); q(c,78,58,77,62,80,64); q(c,66,74,65,78,68,80);
+}},
+{name:'ふうせん',cat:'おそとのもの',draw:function(c){
+  ellip(c,32,32,11,13);
+  ellip(c,56,24,12,14);
+  ellip(c,72,44,10,12);
+  poly(c,[[32,45],[29,49],[35,49]]);
+  poly(c,[[56,38],[53,42],[59,42]]);
+  poly(c,[[72,56],[69,60],[75,60]]);
+  q(c,32,49,40,64,47,80);
+  q(c,56,42,52,60,49,80);
+  q(c,72,60,58,70,50,80);
+  circle(c,49,82,2.5);
+  arc2(c,28,28,4,120,220); arc2(c,52,20,4,120,220);
+}},
+{name:'プレゼント',cat:'おそとのもの',draw:function(c){
+  rrect(c,28,46,44,34,4);
+  rrect(c,24,38,52,10,4);
+  line(c,45,48,45,80); line(c,55,48,55,80);
+  line(c,45,38,45,48); line(c,55,38,55,48);
+  ellip(c,42,32,7,5,0.5); ellip(c,58,32,7,5,-0.5);
+  circle(c,50,33,3);
+  circle(c,35,60,1.8); circle(c,65,60,1.8); circle(c,35,72,1.8); circle(c,65,72,1.8);
+}},
+{name:'テディベア',cat:'おそとのもの',draw:function(c){
+  circle(c,39,19,5.5); circle(c,61,19,5.5);
+  circle(c,39,19,2.5); circle(c,61,19,2.5);
+  circle(c,50,30,14);
+  eyes2(c,5,27,2);
+  ellip(c,50,34,6,4.5);
+  circle(c,50,32.5,1.5);
+  q(c,50,34,50,37,47,37.5); q(c,50,34,50,37,53,37.5);
+  ellip(c,50,60,15,17);
+  ellip(c,33,52,6,11,0.5); ellip(c,67,52,6,11,-0.5);
+  ellip(c,40,78,7,8,0.2); ellip(c,60,78,7,8,-0.2);
+  ellip(c,50,62,8,9);
+}},
+{name:'ティーカップ',cat:'おそとのもの',draw:function(c){
+  ellip(c,50,48,22,5);
+  c.beginPath(); c.moveTo(28,48);
+  c.quadraticCurveTo(30,68,42,70);
+  c.lineTo(58,70);
+  c.quadraticCurveTo(70,68,72,48);
+  c.stroke();
+  arc2(c,75,56,7,-80,80); arc2(c,75,56,3.5,-70,70);
+  ellip(c,50,74,28,5);
+  q(c,42,38,46,30,42,22);
+  q(c,58,38,54,30,58,22);
+  heart(c,50,58,5);
+}},
+{name:'ぼうし',cat:'おそとのもの',draw:function(c){
+  ellip(c,50,60,30,9);
+  arc2(c,50,58,17,180,360);
+  q(c,33,54,50,58,67,54);
+  ellip(c,64,50,4,3,0.4); ellip(c,68,54,4,3,-0.3);
+  circle(c,36,50,2.5);
+  circle(c,32,48,1.5); circle(c,40,48,1.5); circle(c,33,53,1.5); circle(c,39,53,1.5);
+  circle(c,20,26,2); circle(c,78,24,2);
+}}
+];
+
+var NURIE_PICS=PICS_A.concat(PICS_B);
 var NURIE_COLORS=['#FF5A5A','#FF9430','#FFD93B','#7ED957','#3FBF8F','#5AC8FA','#4AA3FF','#8E7DF0','#FF9ECD','#A0715E','#9AA3B5'];
-var nurie={pic:null, tool:'fill', color:'#FF5A5A', linesData:null, spraying:false, sx:0, sy:0, sprayId:null, painting:false, lx:0, ly:0};
+var nurie={pic:null, tool:'fill', color:'#FF5A5A', linesData:null, spraying:false, sx:0, sy:0, sprayId:null, painting:false, lx:0, ly:0, undo:[], photoEdges:null};
 var nPaint=$('#nurie-paint'), nPctx=nPaint.getContext('2d');
 var nLines=$('#nurie-lines'), nLctx=nLines.getContext('2d');
 
@@ -1150,24 +2254,43 @@ function drawPic(ctx, size, picIdx, lineW){
   NURIE_PICS[picIdx].draw(ctx);
   ctx.setTransform(1,0,0,1,0,0);
 }
-(function buildNurie(){
-  /* えらぶ画面 */
+var nurieSelBuilt=false;
+function buildNurieSelect(){
+  if(nurieSelBuilt) return;
+  nurieSelBuilt=true;
   var sel=$('#nurie-select');
-  NURIE_PICS.forEach(function(p,idx){
-    var b=document.createElement('button');
-    b.className='pic-btn';
-    var cv=document.createElement('canvas');
-    cv.width=220; cv.height=220;
-    var cx=cv.getContext('2d');
-    cx.fillStyle='#fff'; cx.fillRect(0,0,220,220);
-    drawPic(cx,220,idx,2.4);
-    b.appendChild(cv);
-    var nm=document.createElement('div');
-    nm.className='nm'; nm.textContent=p.name;
-    b.appendChild(nm);
-    b.addEventListener('click', function(){ sfx.tap(); nurieOpen(idx); });
-    sel.appendChild(b);
+  var pb=document.createElement('button');
+  pb.className='photo-make';
+  pb.innerHTML='<span class="ic">📷</span> しゃしんを ぬりえに する <small>カメラ・アルバム</small>';
+  pb.addEventListener('click', function(){ sfx.tap(); $('#nurie-file').click(); });
+  sel.appendChild(pb);
+  var order=['ゆめかわ','どうぶつ','スイーツ','うみのいきもの','とり・むし','くだもの','のりもの','おそとのもの'];
+  order.forEach(function(cat){
+    var h=document.createElement('div');
+    h.className='nurie-cat-h'; h.textContent=cat;
+    sel.appendChild(h);
+    var grid=document.createElement('div');
+    grid.className='pics-grid';
+    NURIE_PICS.forEach(function(p,idx){
+      if(p.cat!==cat) return;
+      var b=document.createElement('button');
+      b.className='pic-btn';
+      var cv=document.createElement('canvas');
+      cv.width=150; cv.height=150;
+      var cx=cv.getContext('2d');
+      cx.fillStyle='#fff'; cx.fillRect(0,0,150,150);
+      drawPic(cx,150,idx,2.4);
+      b.appendChild(cv);
+      var nm=document.createElement('div');
+      nm.className='nm'; nm.textContent=p.name;
+      b.appendChild(nm);
+      b.addEventListener('click', function(){ sfx.tap(); nurieOpen(idx); });
+      grid.appendChild(b);
+    });
+    sel.appendChild(grid);
   });
+}
+(function buildNurie(){
   /* ツール */
   var tools=[
     {id:'fill',  ic:'🪣', lb:'ぬりつぶし'},
@@ -1190,6 +2313,11 @@ function drawPic(ctx, size, picIdx, lineW){
     });
     tb.appendChild(b);
   });
+  var ub=document.createElement('button');
+  ub.className='tool-btn';
+  ub.innerHTML='<span class="ic">↩️</span><span class="lb">もどす</span>';
+  ub.addEventListener('click', function(){ sfx.tap(); nurieUndo(); });
+  tb.appendChild(ub);
   /* いろ */
   var sw=$('#nurie-swatches');
   NURIE_COLORS.forEach(function(c,i){
@@ -1209,7 +2337,8 @@ function drawPic(ctx, size, picIdx, lineW){
 $('#nurie-other').addEventListener('click', function(){ sfx.tap(); nurieShowSelect(); });
 
 function nurieShowSelect(){
-  $('#nurie-select').style.display='grid';
+  buildNurieSelect();
+  $('#nurie-select').style.display='flex';
   $('#nurie-work').style.display='none';
   $('#nurie-other').style.visibility='hidden';
 }
@@ -1219,6 +2348,7 @@ function nurieEnter(){
 }
 function nurieOpen(idx){
   nurie.pic=idx;
+  nurie.undo=[];
   $('#nurie-select').style.display='none';
   $('#nurie-work').style.display='flex';
   $('#nurie-other').style.visibility='visible';
@@ -1243,7 +2373,13 @@ function nurieSize(reset){
   nLines.width=s; nLines.height=s;
   nPctx.fillStyle='#FFFFFF'; nPctx.fillRect(0,0,s,s);
   if(old) nPctx.drawImage(old,0,0,s,s);
-  drawPic(nLctx, s, nurie.pic, 2.2);
+  if(nurie.pic==='photo' && nurie.photoEdges){
+    nLctx.setTransform(1,0,0,1,0,0);
+    nLctx.clearRect(0,0,s,s);
+    nLctx.drawImage(nurie.photoEdges,0,0,s,s);
+  }else{
+    drawPic(nLctx, s, nurie.pic, 2.2);
+  }
   nurie.linesData=nLctx.getImageData(0,0,s,s).data;
 }
 /* バリア(線)だけを境界にした塗りつぶし。色は colorFn(x,y) で決める */
@@ -1251,8 +2387,8 @@ function floodFill(sx, sy, colorFn){
   var w=nPaint.width, h=nPaint.height;
   var L=nurie.linesData;
   var seed=sy*w+sx;
-  if(sx<0||sy<0||sx>=w||sy>=h) return;
-  if(L[seed*4+3]>150) return;   /* 線の上をタップ */
+  if(sx<0||sy<0||sx>=w||sy>=h) return false;
+  if(L[seed*4+3]>150) return false;   /* 線の上をタップ */
   var img=nPctx.getImageData(0,0,w,h), d=img.data;
   var visited=new Uint8Array(w*h);
   var stack=[seed];
@@ -1272,6 +2408,7 @@ function floodFill(sx, sy, colorFn){
   }
   nPctx.putImageData(img,0,0);
   sfx.fill();
+  return true;
 }
 function hexRgb(hex){
   return [parseInt(hex.substr(1,2),16), parseInt(hex.substr(3,2),16), parseInt(hex.substr(5,2),16)];
@@ -1280,19 +2417,29 @@ function nurieTapFill(x,y){
   var base=hexRgb(nurie.color), white=[255,255,255];
   x=Math.round(x); y=Math.round(y);
   if(nurie.tool==='fill'){
-    floodFill(x,y,function(){ return base; });
-  }else if(nurie.tool==='dots'){
+    return floodFill(x,y,function(){ return base; });
+  }
+  if(nurie.tool==='dots'){
     var p=Math.round(26*DPR), r2=Math.pow(p*0.28,2);
-    floodFill(x,y,function(px,py){
+    return floodFill(x,y,function(px,py){
       var dx=px%p-p/2, dy=py%p-p/2;
       return (dx*dx+dy*dy<r2) ? white : base;
     });
-  }else if(nurie.tool==='stripe'){
-    var sw=Math.round(14*DPR);
-    floodFill(x,y,function(px,py){
-      return (Math.floor((px+py)/sw)%2===0) ? base : white;
-    });
   }
+  var sw=Math.round(14*DPR);
+  return floodFill(x,y,function(px,py){
+    return (Math.floor((px+py)/sw)%2===0) ? base : white;
+  });
+}
+function pushNurieUndo(){
+  nurie.undo.push(snapCanvas(nPaint));
+  if(nurie.undo.length>15) nurie.undo.shift();
+}
+function nurieUndo(){
+  var s=nurie.undo.pop();
+  if(!s) return;
+  nPctx.clearRect(0,0,nPaint.width,nPaint.height);
+  nPctx.drawImage(s,0,0,nPaint.width,nPaint.height);
 }
 function sprayBurst(){
   var r=24*DPR;
@@ -1316,12 +2463,15 @@ nPaint.addEventListener('pointerdown', function(e){
   nPaint.setPointerCapture(e.pointerId);
   var p=evPos(e,nPaint);
   if(nurie.tool==='fill'||nurie.tool==='dots'||nurie.tool==='stripe'){
-    nurieTapFill(p[0],p[1]);
+    pushNurieUndo();
+    if(!nurieTapFill(p[0],p[1])) nurie.undo.pop();
   }else if(nurie.tool==='spray'){
+    pushNurieUndo();
     nurie.spraying=true; nurie.sx=p[0]; nurie.sy=p[1];
     sprayBurst();
     nurie.sprayId=setInterval(sprayBurst, 50);
   }else{
+    pushNurieUndo();
     nurie.painting=true;
     nurie.lx=p[0]; nurie.ly=p[1];
     nurieStroke(p[0]+0.01,p[1]+0.01, nurie.tool==='erase');
@@ -1337,6 +2487,83 @@ nPaint.addEventListener('pointermove', function(e){
     nurie.painting=false; nurie.spraying=false;
     if(nurie.sprayId){ clearInterval(nurie.sprayId); nurie.sprayId=null; }
   });
+});
+
+/* --- しゃしんぬりえ: 輪郭を抽出して線画にする --- */
+function boxBlur(src,S,r){
+  var tmp=new Float32Array(S*S), dst=new Float32Array(S*S);
+  var win=2*r+1, x, y, acc;
+  for(y=0;y<S;y++){
+    var row=y*S; acc=0;
+    for(x=-r;x<=r;x++) acc+=src[row+Math.max(0,Math.min(S-1,x))];
+    for(x=0;x<S;x++){
+      tmp[row+x]=acc/win;
+      acc+=src[row+Math.min(S-1,x+r+1)]-src[row+Math.max(0,x-r)];
+    }
+  }
+  for(x=0;x<S;x++){
+    acc=0;
+    for(y=-r;y<=r;y++) acc+=tmp[Math.max(0,Math.min(S-1,y))*S+x];
+    for(y=0;y<S;y++){
+      dst[y*S+x]=acc/win;
+      acc+=tmp[Math.min(S-1,y+r+1)*S+x]-tmp[Math.max(0,y-r)*S+x];
+    }
+  }
+  return dst;
+}
+function photoToEdges(img){
+  var S=768;
+  var cv=document.createElement('canvas'); cv.width=S; cv.height=S;
+  var cx=cv.getContext('2d');
+  cx.fillStyle='#fff'; cx.fillRect(0,0,S,S);
+  var iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+  var sc=Math.min(S/iw,S/ih);
+  cx.drawImage(img,(S-iw*sc)/2,(S-ih*sc)/2,iw*sc,ih*sc);
+  var d=cx.getImageData(0,0,S,S).data;
+  var g=new Float32Array(S*S), i;
+  for(i=0;i<S*S;i++) g[i]=0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2];
+  g=boxBlur(g,S,2); g=boxBlur(g,S,2);
+  var mag=new Float32Array(S*S);
+  var hist=new Uint32Array(256);
+  var x,y;
+  for(y=1;y<S-1;y++)for(x=1;x<S-1;x++){
+    i=y*S+x;
+    var gx=g[i-S+1]+2*g[i+1]+g[i+S+1]-g[i-S-1]-2*g[i-1]-g[i+S-1];
+    var gy=g[i+S-1]+2*g[i+S]+g[i+S+1]-g[i-S-1]-2*g[i-S]-g[i-S+1];
+    var m=Math.sqrt(gx*gx+gy*gy);
+    mag[i]=m;
+    hist[Math.min(255,m|0)]++;
+  }
+  /* 上位8%のエッジだけ残す(最低しきい値20) */
+  var total=(S-2)*(S-2), acc=0, thr=24, b;
+  for(b=255;b>=0;b--){ acc+=hist[b]; if(acc>total*0.08){ thr=Math.max(20,b); break; } }
+  var out=document.createElement('canvas'); out.width=S; out.height=S;
+  var octx=out.getContext('2d');
+  var oid=octx.createImageData(S,S), od=oid.data;
+  for(y=1;y<S-1;y++)for(x=1;x<S-1;x++){
+    i=y*S+x;
+    if(mag[i]>=thr||mag[i-1]>=thr||mag[i+1]>=thr||mag[i-S]>=thr||mag[i+S]>=thr){
+      var p=i*4;
+      od[p]=32; od[p+1]=35; od[p+2]=40; od[p+3]=255;
+    }
+  }
+  octx.putImageData(oid,0,0);
+  return out;
+}
+$('#nurie-file').addEventListener('change', function(){
+  var f=this.files && this.files[0];
+  this.value='';
+  if(!f) return;
+  var url=URL.createObjectURL(f);
+  var img=new Image();
+  img.onload=function(){
+    URL.revokeObjectURL(url);
+    nurie.photoEdges=photoToEdges(img);
+    nurieOpen('photo');
+    sfx.good();
+  };
+  img.onerror=function(){ URL.revokeObjectURL(url); };
+  img.src=url;
 });
 
 /* ================= duel(はやおしバトル) ================= */
@@ -1637,6 +2864,9 @@ function stopHockey(){
 
 /* ================= iOS zoom guard ================= */
 document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
+
+window.ASOBI_GO=go;          /* デバッグ用 */
+window.ASOBI_READY=true;
 })();
 </script>
 <script>
