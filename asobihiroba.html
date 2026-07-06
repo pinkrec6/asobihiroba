@@ -233,6 +233,29 @@
   .num-btn.yes{background:var(--mint); color:#fff; border-bottom-color:#2A9A70; animation:match-bounce2 .5s;}
   @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
   @keyframes match-bounce2{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}
+  /* かけざん */
+  .mult-group{
+    position:absolute; border:3px dashed var(--sky-deep); border-radius:22px;
+    display:flex; flex-wrap:wrap; align-content:center; align-items:center; justify-content:center;
+    gap:1px; font-size:1.5rem; line-height:1.15;
+  }
+  /* そろばん */
+  .soro{position:absolute; inset:0; padding:4% 10%; display:flex; justify-content:center; gap:16%;}
+  .soro-rod{position:relative; width:min(76px,24%); height:92%;}
+  .soro-rod::before{
+    content:''; position:absolute; left:50%; top:1%; bottom:1%; width:6px;
+    transform:translateX(-50%); background:var(--ink-soft); opacity:.45; border-radius:3px;
+  }
+  .soro-bar{position:absolute; left:6%; right:6%; top:33%; height:7px; background:var(--ink-soft); border-radius:4px; opacity:.8;}
+  .bead{
+    position:absolute; left:50%; width:100%; height:11%; transform:translateX(-50%);
+    background:linear-gradient(160deg,var(--sun),var(--sun-deep)); border-radius:50%;
+    box-shadow:0 2px 0 rgba(43,58,85,.2); transition:top .15s; padding:0;
+  }
+  .soro-now{
+    position:absolute; right:4%; bottom:3%; font-weight:800; font-size:1.3rem;
+    color:var(--ink-soft); font-variant-numeric:tabular-nums;
+  }
 
   /* ---------- draw & nurie shared tools ---------- */
   .canvas-wrap{flex:1; min-height:0; border-radius:26px; overflow:hidden; box-shadow:var(--shadow); background:#FFFFFF; position:relative;}
@@ -344,7 +367,7 @@
         <div class="icon">🐹</div><div class="name">もぐらたたき</div><div class="desc">💣には さわらないで!</div>
       </button>
       <button class="game-card" style="--edge:var(--mint)" data-go="count">
-        <div class="icon">🧮</div><div class="name">さんすう</div><div class="desc">かぞえて けいさん!</div>
+        <div class="icon">🧮</div><div class="name">さんすう</div><div class="desc">かけざん・そろばんも!</div>
       </button>
       <button class="game-card" style="--edge:var(--coral)" data-go="nurie">
         <div class="icon">🖍️</div><div class="name">ぬりえ</div><div class="desc">すきな いろで ぬろう</div>
@@ -403,7 +426,13 @@
     <div class="bar">
       <button class="pill-btn" data-go="home">← もどる</button>
       <div class="title">🧮 さんすう</div>
-      <button class="pill-btn" id="count-restart">はじめから</button>
+      <button class="pill-btn" id="count-restart">えらびなおす</button>
+    </div>
+    <div class="m-mode" id="count-mode">
+      <div class="q">なにで あそぶ?</div>
+      <button class="mode-btn" data-cmode="mix"><span class="ic">🔢</span> かぞえて けいさん</button>
+      <button class="mode-btn" data-cmode="mult"><span class="ic">✖️</span> かけざん</button>
+      <button class="mode-btn" data-cmode="soro"><span class="ic">🧮</span> そろばん</button>
     </div>
     <div class="count-stars" id="count-stars"></div>
     <div id="count-field"></div>
@@ -598,7 +627,7 @@ function go(id){
   });
   if(id==='memory') memoryShowMode();
   if(id==='mole') moleShowStart();
-  if(id==='count') countStart();
+  if(id==='count') countShowMode();
   if(id==='draw') requestAnimationFrame(sizeDrawCanvas);
   if(id==='nurie') nurieEnter();
   if(id==='duel') duelShowStart();
@@ -818,11 +847,30 @@ function stopMole(){
 var COUNT_ROUNDS=8;
 var CNT_ANIMALS=['🐟','🐥','🐞','🦋','🐢','🐇'];
 var CNT_THINGS=['🍓','🍎','🌼','⭐','🎈','🍬'];
-var cnt={round:0, answer:0, busy:false};
+var cnt={mode:'mix', round:0, answer:0, busy:false, soro:null, target:0};
 
-$('#count-restart').addEventListener('click', function(){ sfx.tap(); countStart(); });
-function countStart(){
-  cnt.round=0;
+function countShowMode(){
+  $('#count-mode').style.display='flex';
+  $('#count-stars').style.display='none';
+  $('#count-field').style.display='none';
+  $('#count-q').style.display='none';
+  $('#count-choices').style.display='none';
+}
+document.querySelectorAll('#count-mode .mode-btn').forEach(function(b){
+  b.addEventListener('click', function(){
+    sfx.tap();
+    countStart(b.getAttribute('data-cmode'));
+  });
+});
+$('#count-restart').addEventListener('click', function(){ sfx.tap(); countShowMode(); });
+
+function countStart(mode){
+  cnt.mode=mode; cnt.round=0;
+  $('#count-mode').style.display='none';
+  $('#count-stars').style.display='flex';
+  $('#count-field').style.display='block';
+  $('#count-q').style.display='block';
+  $('#count-choices').style.display='flex';
   var stars=$('#count-stars');
   stars.innerHTML='';
   for(var i=0;i<COUNT_ROUNDS;i++){
@@ -849,19 +897,48 @@ function putItem(field, slot, emoji, crossed, big){
   el.style.transform='rotate('+(Math.random()*24-12)+'deg)';
   field.appendChild(el);
 }
+function renderChoices(opts){
+  var box=$('#count-choices');
+  box.innerHTML='';
+  opts.forEach(function(v){
+    var btn=document.createElement('button');
+    btn.className='num-btn'; btn.textContent=String(v);
+    btn.addEventListener('click', function(){ countPick(btn,v); });
+    box.appendChild(btn);
+  });
+}
+function makeOpts(ans, deltas, max){
+  var opts=[ans];
+  var pool=deltas.slice();
+  while(opts.length<3 && pool.length){
+    var d=ans+pool.splice(rand(pool.length),1)[0];
+    if(d>=1 && d<=max && opts.indexOf(d)<0) opts.push(d);
+  }
+  while(opts.length<3){
+    var e=ans+(rand(2)? 1+rand(3) : -(1+rand(3)));
+    if(e>=1 && e<=max && opts.indexOf(e)<0) opts.push(e);
+  }
+  return shuffle(opts);
+}
 function countNext(){
   cnt.busy=false;
+  if(cnt.mode==='mult') return multNext();
+  if(cnt.mode==='soro') return soroNext();
+  mixNext();
+}
+
+/* --- かぞえて けいさん(さがす・たしざん・ひきざん) --- */
+function mixNext(){
   var field=$('#count-field');
   field.innerHTML='';
-  var types=['find','find','add','sub'];   /* さがして数えるを多めに */
+  var types=['find','find','add','sub'];
   var type=types[rand(types.length)];
   var q='';
 
   if(type==='find'){
-    /* まぎれた中から 1しゅるいだけ かぞえる */
     var pool=shuffle((Math.random()<0.5?CNT_ANIMALS:CNT_THINGS).slice());
     var target=pool[0], d1=pool[1], d2=pool[2];
-    var n=5+rand(5);            /* 5〜9 */
+    var n=5+rand(5);
     var m1=3+rand(4), m2=3+rand(4);
     while(n+m1+m2>20){ if(m1>3)m1--; else m2--; }
     cnt.answer=n;
@@ -876,7 +953,7 @@ function countNext(){
     q=target+' は いくつ あるかな?';
   }else if(type==='add'){
     var em=CNT_THINGS[rand(CNT_THINGS.length)];
-    var n1=2+rand(5), n2=2+rand(5);   /* 2〜6 + 2〜6 */
+    var n1=2+rand(5), n2=2+rand(5);
     cnt.answer=n1+n2;
     var sl=slotGrid(3,3, 3,40, 8,92);
     var sr=slotGrid(3,3, 60,97, 8,92);
@@ -888,47 +965,174 @@ function countNext(){
     q='ぜんぶで いくつに なるかな?';
   }else{
     var em2=CNT_THINGS[rand(CNT_THINGS.length)];
-    var t=5+rand(5);            /* 5〜9こ */
-    var gone=1+rand(t-2);       /* 1〜t-1こ ❌ */
+    var t=5+rand(5);
+    var gone=1+rand(t-2);
     cnt.answer=t-gone;
     var slots2=slotGrid(4,3, 4,96, 6,94);
     for(var k=0;k<t;k++) putItem(field, slots2[k], em2, k<gone, true);
     q='❌は たべられちゃった! のこりは いくつ?';
   }
   $('#count-q').textContent=q;
+  renderChoices(makeOpts(cnt.answer,[1,-1,2,-2],15));
+}
 
-  var opts=[cnt.answer];
-  while(opts.length<3){
-    var d = cnt.answer + (rand(2)? 1+rand(2) : -(1+rand(2)));
-    if(d>=1 && d<=15 && opts.indexOf(d)<0) opts.push(d);
+/* --- かけざん(おなじ数ずつのグループ) --- */
+function multNext(){
+  var em=CNT_THINGS[rand(CNT_THINGS.length)];
+  var n1=2+rand(4);       /* さらのかず 2〜5 */
+  var n2=1+rand(6);       /* 1さらあたり 1〜6 */
+  cnt.answer=n1*n2;
+  var field=$('#count-field');
+  field.innerHTML='';
+  var rows=n1<=3?1:2;
+  var cols=Math.ceil(n1/rows);
+  for(var i=0;i<n1;i++){
+    var r=Math.floor(i/cols), col=i%cols;
+    var g=document.createElement('div');
+    g.className='mult-group';
+    var gw=92/cols, gh=(rows===1?56:88)/rows;
+    var gtop=rows===1?22:6;
+    g.style.left=(4+col*gw+gw*0.05)+'%';
+    g.style.top=(gtop+r*gh+gh*0.05)+'%';
+    g.style.width=(gw*0.9)+'%';
+    g.style.height=(gh*0.88)+'%';
+    g.style.fontSize=(n2>4?1.25:1.55)+'rem';
+    var html='';
+    for(var k=0;k<n2;k++) html+='<span>'+em+'</span>';
+    g.innerHTML=html;
+    field.appendChild(g);
   }
-  shuffle(opts);
-  var box=$('#count-choices');
-  box.innerHTML='';
-  opts.forEach(function(v){
-    var btn=document.createElement('button');
-    btn.className='num-btn'; btn.textContent=String(v);
-    btn.addEventListener('click', function(){ countPick(btn,v); });
-    box.appendChild(btn);
+  $('#count-q').textContent=em+'が '+n2+'こずつ '+n1+'さら。 '+n2+'×'+n1+' は?';
+  renderChoices(makeOpts(cnt.answer,[n1,-n1,n2,-n2,1,-1],36));
+}
+
+/* --- そろばん(2けた: 10のくらい・1のくらい) --- */
+function soroNext(){
+  var read=(cnt.round%2===0);
+  var big=cnt.round>=4;
+  var N=big? 10+rand(90) : 1+rand(9);
+  cnt.target=N; cnt.answer=N;
+  buildSoro(!read);
+  if(read){
+    setSoro(N);
+    $('#count-q').textContent='そろばんは いくつかな?';
+    renderChoices(makeOpts(N,[1,-1,5,-5,10,-10],99));
+  }else{
+    $('#count-q').textContent='「'+N+'」を そろばんで つくってね';
+    var box=$('#count-choices');
+    box.innerHTML='';
+    var ok=document.createElement('button');
+    ok.className='big-btn';
+    ok.textContent='できた!';
+    ok.addEventListener('click', function(){
+      if(cnt.busy) return;
+      sfx.tap();
+      if(soroValue()===cnt.target){
+        countAdvance();
+      }else{
+        sfx.nope();
+        $('#count-q').textContent='おしい! いまは「'+soroValue()+'」だよ';
+      }
+    });
+    box.appendChild(ok);
+  }
+}
+function buildSoro(interactive){
+  var f=$('#count-field');
+  f.innerHTML='';
+  cnt.soro=[{h:0,e:0},{h:0,e:0}];
+  var w=document.createElement('div');
+  w.className='soro';
+  var bar=document.createElement('div'); bar.className='soro-bar';
+  w.appendChild(bar);
+  for(var r=0;r<2;r++){
+    (function(r){
+      var rod=document.createElement('div');
+      rod.className='soro-rod';
+      rod.dataset.r=String(r);
+      var hb=document.createElement('button'); hb.className='bead';
+      rod.appendChild(hb);
+      var ebs=[];
+      for(var i=0;i<4;i++){
+        var eb=document.createElement('button'); eb.className='bead';
+        rod.appendChild(eb); ebs.push(eb);
+      }
+      if(interactive){
+        hb.addEventListener('pointerdown', function(e){
+          e.preventDefault(); sfx.tap();
+          cnt.soro[r].h=1-cnt.soro[r].h;
+          soroLayout();
+        });
+        ebs.forEach(function(eb,i){
+          eb.addEventListener('pointerdown', function(e){
+            e.preventDefault(); sfx.tap();
+            cnt.soro[r].e = (i < cnt.soro[r].e) ? i : i+1;
+            soroLayout();
+          });
+        });
+      }else{
+        hb.style.pointerEvents='none';
+        ebs.forEach(function(x){ x.style.pointerEvents='none'; });
+      }
+      w.appendChild(rod);
+    })(r);
+  }
+  f.appendChild(w);
+  if(interactive){
+    var now=document.createElement('div');
+    now.className='soro-now'; now.id='soro-now';
+    f.appendChild(now);
+  }
+  soroLayout();
+}
+function setSoro(N){
+  var t=Math.floor(N/10), o=N%10;
+  cnt.soro[0].h=t>=5?1:0; cnt.soro[0].e=t%5;
+  cnt.soro[1].h=o>=5?1:0; cnt.soro[1].e=o%5;
+  soroLayout();
+}
+function soroValue(){
+  var t=cnt.soro[0].h*5+cnt.soro[0].e;
+  var o=cnt.soro[1].h*5+cnt.soro[1].e;
+  return t*10+o;
+}
+function soroLayout(){
+  document.querySelectorAll('.soro-rod').forEach(function(rod){
+    var r=parseInt(rod.dataset.r,10);
+    var st=cnt.soro[r];
+    var beads=rod.querySelectorAll('.bead');
+    beads[0].style.top = st.h ? '20%' : '3%';
+    for(var i=0;i<4;i++){
+      beads[i+1].style.top = (i<st.e ? 37+i*11.5 : 52.5+i*11.5)+'%';
+    }
   });
+  var now=$('#soro-now');
+  if(now) now.textContent='いま: '+soroValue();
+}
+
+/* --- きょうつう --- */
+function countAdvance(){
+  cnt.busy=true;
+  sfx.good();
+  var st=document.querySelectorAll('#count-stars .st');
+  st[cnt.round].classList.add('got');
+  cnt.round++;
+  if(cnt.round>=COUNT_ROUNDS){
+    confetti(); sfx.great();
+    var msgs={mix:'さんすう はかせだね!', mult:'かけざん マスターだね!', soro:'そろばん めいじんだね!'};
+    var m=cnt.mode;
+    setTimeout(function(){
+      showOverlay('🌟','ぜんぶ せいかい!', msgs[m], function(){ countStart(m); });
+    },900);
+  }else{
+    setTimeout(countNext, 900);
+  }
 }
 function countPick(btn, v){
   if(cnt.busy) return;
   if(v===cnt.answer){
-    cnt.busy=true;
     btn.classList.add('yes');
-    sfx.good();
-    var st=document.querySelectorAll('#count-stars .st');
-    st[cnt.round].classList.add('got');
-    cnt.round++;
-    if(cnt.round>=COUNT_ROUNDS){
-      confetti(); sfx.great();
-      setTimeout(function(){
-        showOverlay('🌟','ぜんぶ せいかい!','さんすう はかせだね!', countStart);
-      },900);
-    }else{
-      setTimeout(countNext, 900);
-    }
+    countAdvance();
   }else{
     sfx.nope();
     btn.classList.add('nope');
@@ -2226,7 +2430,179 @@ var PICS_B=[
 }}
 ];
 
-var NURIE_PICS=PICS_A.concat(PICS_B);
+/* ===== nurie part C: おはなしのばめん(物語シーン) ===== */
+/* 既存の絵柄を平行移動+縮小して配置する */
+function motif(c,name,x,y,s){
+  var all=PICS_A.concat(PICS_B);
+  for(var i=0;i<all.length;i++){
+    if(all[i].name===name){
+      c.save(); c.translate(x,y); c.scale(s,s);
+      all[i].draw(c);
+      c.restore();
+      return;
+    }
+  }
+}
+function snowflake(c,x,y,r){
+  line(c,x-r,y,x+r,y);
+  line(c,x-r*0.7,y-r*0.7,x+r*0.7,y+r*0.7);
+  line(c,x-r*0.7,y+r*0.7,x+r*0.7,y-r*0.7);
+  line(c,x,y-r,x,y+r);
+}
+function sunRays(c,x,y,r){
+  circle(c,x,y,r);
+  for(var i=0;i<8;i++){
+    var a=i*Math.PI/4;
+    line(c,x+Math.cos(a)*(r+2),y+Math.sin(a)*(r+2),x+Math.cos(a)*(r+5),y+Math.sin(a)*(r+5));
+  }
+}
+
+var PICS_C=[
+{name:'そらとぶユニコーン',cat:'おはなし',draw:function(c){
+  motif(c,'にじ',0,16,0.92);
+  motif(c,'ユニコーン',12,-4,0.6);
+  starP(c,90,24,5,2.2);
+  circle(c,92,46,2); circle(c,6,44,2); circle(c,50,8,1.8);
+}},
+{name:'どうぶつのピクニック',cat:'おはなし',draw:function(c){
+  sunRays(c,89,11,5.5);
+  cloud(c,44,10,6);
+  /* き */
+  cloud(c,10,14,8);
+  line(c,8,24,6,88); line(c,12,24,14,88);
+  circle(c,6,13,2.2); circle(c,14,10,2.2);
+  /* シート */
+  poly(c,[[30,62],[70,62],[80,84],[20,84]]);
+  line(c,43,62,38,84); line(c,57,62,62,84);
+  line(c,26.5,69,73.5,69); line(c,23,76,77,76);
+  /* バスケットとりんご */
+  rrect(c,44,50,14,10,3);
+  arc2(c,51,50,6,180,360);
+  line(c,44,55,58,55);
+  circle(c,38,73,3); line(c,38,70,39,67);
+  circle(c,62,72,3); line(c,62,69,63,66);
+  /* くま */
+  circle(c,19.5,52.5,2.8); circle(c,28.5,52.5,2.8);
+  circle(c,24,58,7);
+  circle(c,21.5,57,1.2); circle(c,26.5,57,1.2);
+  arc2(c,24,60,2,25,155);
+  ellip(c,24,73,8,10);
+  ellip(c,15,70,3,6,0.5); ellip(c,33,70,3,6,-0.5);
+  /* うさぎ */
+  ellip(c,77,45,2.2,7); ellip(c,83,45,2.2,7);
+  circle(c,80,57,6.5);
+  circle(c,77.8,56,1.1); circle(c,82.2,56,1.1);
+  arc2(c,80,59,1.8,25,155);
+  ellip(c,80,71,7,9);
+  motif(c,'ちょうちょ',56,2,0.2);
+  line(c,4,88,96,88);
+}},
+{name:'うみのなか',cat:'おはなし',draw:function(c){
+  q(c,4,8,14,2,24,8); q(c,24,8,34,14,44,8); q(c,44,8,54,2,64,8); q(c,64,8,74,14,84,8); q(c,84,8,90,4,96,8);
+  motif(c,'さかな',0,14,0.5);
+  motif(c,'さかな',48,6,0.3);
+  motif(c,'たこ',50,44,0.45);
+  motif(c,'ひとで',6,66,0.3);
+  /* かいそう */
+  c.beginPath(); c.moveTo(16,90); c.quadraticCurveTo(10,76,16,64); c.quadraticCurveTo(20,54,16,44); c.stroke();
+  c.beginPath(); c.moveTo(24,90); c.quadraticCurveTo(28,78,24,68); c.stroke();
+  c.beginPath(); c.moveTo(90,90); c.quadraticCurveTo(94,80,90,70); c.stroke();
+  circle(c,42,60,2); circle(c,46,52,1.6); circle(c,38,70,1.6);
+  line(c,4,90,96,90);
+  arc2(c,58,90,3.5,180,360); arc2(c,78,90,3,180,360);
+}},
+{name:'おしろとおひめさま',cat:'おはなし',draw:function(c){
+  motif(c,'おしろ',10,-2,0.72);
+  motif(c,'おひめさま',55,44,0.55);
+  q(c,44,59,30,74,20,88); q(c,52,59,44,76,38,88);
+  circle(c,12,78,2.5);
+  circle(c,9,75,1.8); circle(c,15,75,1.8); circle(c,9,81,1.8); circle(c,15,81,1.8);
+  circle(c,28,84,2.5);
+  circle(c,25,81,1.8); circle(c,31,81,1.8); circle(c,25,87,1.8); circle(c,31,87,1.8);
+  sunRays(c,7,9,4.5);
+  cloud(c,88,12,6);
+  heart(c,84,34,3.5);
+}},
+{name:'うちゅうりょこう',cat:'おはなし',draw:function(c){
+  motif(c,'ロケット',4,10,0.6);
+  circle(c,76,28,10);
+  ellip(c,76,28,16,4.5,-0.35);
+  arc2(c,72,25,3,0,180); arc2(c,80,31,2.5,0,180);
+  circle(c,84,72,9);
+  q(c,78,70,82,66,88,69); q(c,80,77,85,74,90,77);
+  c.beginPath(); c.arc(20,82,8,-1.15,1.15); c.arc(25,82,6,1.35,-1.35,true); c.closePath(); c.stroke();
+  starP(c,66,10,5,2.2); starP(c,90,48,4,1.8); starP(c,60,56,4,1.8);
+  circle(c,34,6,1.5); circle(c,94,10,1.5);
+}},
+{name:'にんぎょとイルカ',cat:'おはなし',draw:function(c){
+  motif(c,'にんぎょ',0,4,0.62);
+  motif(c,'イルカ',42,30,0.58);
+  sunRays(c,90,9,5);
+  cloud(c,66,8,6);
+  q(c,2,62,12,56,22,62); q(c,22,62,32,68,42,62);
+  line(c,2,92,98,92);
+  arc2(c,56,92,3.5,180,360); arc2(c,88,92,3,180,360);
+  circle(c,36,20,2); circle(c,40,12,1.6);
+}},
+{name:'バースデーパーティー',cat:'おはなし',draw:function(c){
+  q(c,2,4,26,12,50,12); q(c,50,12,74,12,98,4);
+  poly(c,[[12,7],[18,8],[15,15]]);
+  poly(c,[[26,10],[32,11],[29,18]]);
+  poly(c,[[40,11],[46,12],[43,19]]);
+  poly(c,[[54,12],[60,11],[57,19]]);
+  poly(c,[[68,11],[74,10],[71,18]]);
+  poly(c,[[82,8],[88,7],[85,15]]);
+  motif(c,'バースデーケーキ',28,26,0.55);
+  rrect(c,18,74,64,5,2);
+  line(c,24,79,24,90); line(c,76,79,76,90);
+  motif(c,'ふうせん',0,18,0.42);
+  motif(c,'プレゼント',64,60,0.4);
+  starP(c,88,30,4,1.8); starP(c,10,64,4,1.8);
+  circle(c,90,44,1.6); circle(c,6,50,1.6);
+}},
+{name:'おはなばたけ',cat:'おはなし',draw:function(c){
+  motif(c,'ちょうちょ',8,2,0.34);
+  motif(c,'ちょうちょ',62,8,0.26);
+  sunRays(c,91,8,4.5);
+  cloud(c,36,10,6);
+  motif(c,'チューリップ',0,50,0.44);
+  motif(c,'チューリップ',66,54,0.36);
+  /* デイジー */
+  for(var i=0;i<6;i++){
+    var a=i*Math.PI/3;
+    ellip(c,52+Math.cos(a)*5.5,60+Math.sin(a)*5.5,3,4.5,a+Math.PI/2);
+  }
+  circle(c,52,60,3.5);
+  line(c,52,68,52,90);
+  ellip(c,47,80,4.5,2,-0.7);
+  poly(c,[[10,90],[13,82],[16,90]],false);
+  poly(c,[[38,90],[41,82],[44,90]],false);
+  poly(c,[[88,90],[91,82],[94,90]],false);
+  line(c,2,90,98,90);
+}},
+{name:'ゆきのひ',cat:'おはなし',draw:function(c){
+  motif(c,'ゆきだるま',2,26,0.62);
+  poly(c,[[78,34],[64,56],[92,56]]);
+  poly(c,[[78,46],[60,72],[96,72]]);
+  rrect(c,74,72,8,14,2);
+  snowflake(c,30,14,4); snowflake(c,66,8,3.5); snowflake(c,90,20,3);
+  circle(c,48,22,1.5); circle(c,14,10,1.5); circle(c,58,40,1.5); circle(c,50,60,1.5);
+  cloud(c,14,6,5.5);
+  line(c,2,88,98,88);
+}},
+{name:'よぞらのようせい',cat:'おはなし',draw:function(c){
+  motif(c,'ようせい',4,8,0.6);
+  c.beginPath(); c.arc(78,22,12,-1.15,1.15); c.arc(85,22,9,1.35,-1.35,true); c.closePath(); c.stroke();
+  circle(c,80,19,1.5);
+  arc2(c,81,26,2,25,155);
+  circle(c,52,32,1.6); circle(c,59,38,1.6); circle(c,65,46,1.6); circle(c,69,55,1.6);
+  starP(c,68,66,6,2.6); starP(c,90,50,4.5,2); starP(c,58,80,5,2.2); starP(c,30,68,4,1.8);
+  cloud(c,22,84,8); cloud(c,72,90,7);
+  circle(c,94,72,1.6); circle(c,44,60,1.5);
+}}
+];
+
+var NURIE_PICS=PICS_A.concat(PICS_B).concat(PICS_C);
 var NURIE_COLORS=['#FF5A5A','#FF9430','#FFD93B','#7ED957','#3FBF8F','#5AC8FA','#4AA3FF','#8E7DF0','#FF9ECD','#A0715E','#9AA3B5'];
 var nurie={pic:null, tool:'fill', color:'#FF5A5A', linesData:null, spraying:false, sx:0, sy:0, sprayId:null, painting:false, lx:0, ly:0, undo:[], photoEdges:null};
 var nPaint=$('#nurie-paint'), nPctx=nPaint.getContext('2d');
@@ -2251,7 +2627,7 @@ function buildNurieSelect(){
   pb.innerHTML='<span class="ic">📷</span> しゃしんを ぬりえに する <small>カメラ・アルバム</small>';
   pb.addEventListener('click', function(){ sfx.tap(); $('#nurie-file').click(); });
   sel.appendChild(pb);
-  var order=['ゆめかわ','どうぶつ','スイーツ','うみのいきもの','とり・むし','くだもの','のりもの','おそとのもの'];
+  var order=['おはなし','ゆめかわ','どうぶつ','スイーツ','うみのいきもの','とり・むし','くだもの','のりもの','おそとのもの'];
   order.forEach(function(cat){
     var h=document.createElement('div');
     h.className='nurie-cat-h'; h.textContent=cat;
