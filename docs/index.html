@@ -1084,12 +1084,20 @@ var SORO_READ=[
 ];
 var SORO_CALC=[
   {terms:2, s:[1,6],  o:[1,8],  rods:1, r:[1,9],    fb:{start:2,text:'2 + 3',result:5}},
-  {terms:2, s:[10,89],o:[2,9],  rods:2, r:[1,99],   fb:{start:26,text:'26 + 7',result:33}},
+  {terms:2, s:[10,89],o:[2,9],  rods:2, r:[1,99],  noBorrow:true, fb:{start:26,text:'26 + 7',result:33}},
   {terms:3, s:[5,50], o:[2,20], rods:2, r:[1,99],   fb:{start:24,text:'24 + 18 − 6',result:36}},
   {terms:4, s:[10,80],o:[5,40], rods:3, r:[10,499], fb:{start:75,text:'75 + 38 − 26 + 40',result:127}},
   {terms:5, s:[20,90],o:[10,60],rods:3, r:[100,999],fb:{start:86,text:'86 + 57 − 32 + 45 + 60',result:216}}
 ];
 function rangeRand(lo,hi){ return lo+rand(hi-lo+1); }
+/* a−b で くり下がりが おきるか(どこかの けたで かりてくるか) */
+function needsBorrow(a,b){
+  while(b>0){
+    if(a%10 < b%10) return true;
+    a=Math.floor(a/10); b=Math.floor(b/10);
+  }
+  return false;
+}
 /* とちゅうの値が 0〜そろばんの上限 に収まる式をつくる */
 function genChain(p){
   var cap=Math.pow(10,p.rods)-1;
@@ -1098,10 +1106,11 @@ function genChain(p){
     var val=start, text=String(start), ok=true;
     for(var i=1;i<p.terms;i++){
       var b=rangeRand(p.o[0],p.o[1]);
+      var minusNG = (val-b<0) || (p.noBorrow && needsBorrow(val,b));
       var plus=Math.random()<0.55;
-      if(!plus && val-b<0) plus=true;
+      if(!plus && minusNG) plus=true;
       if(plus && val+b>cap){
-        if(val-b>=0) plus=false; else { ok=false; break; }
+        if(!minusNG) plus=false; else { ok=false; break; }
       }
       val += plus? b : -b;
       text += (plus?' + ':' − ')+b;
