@@ -256,6 +256,16 @@
     position:absolute; right:4%; bottom:3%; font-weight:800; font-size:1.3rem;
     color:var(--ink-soft); font-variant-numeric:tabular-nums;
   }
+  .lv-row{display:flex; gap:10px;}
+  .lv-btn{
+    width:clamp(46px, 12vw, 62px); aspect-ratio:1; border-radius:18px;
+    background:var(--paper); font-size:1.5rem; font-weight:800;
+    font-family:ui-rounded,"SF Pro Rounded","Hiragino Maru Gothic ProN",sans-serif;
+    box-shadow:var(--shadow); border-bottom:4px solid var(--lav);
+    transition:transform .1s; font-variant-numeric:tabular-nums;
+  }
+  .lv-btn:active{transform:scale(.92);}
+  .lv-hint{font-size:.85rem; color:var(--ink-soft);}
 
   /* ---------- draw & nurie shared tools ---------- */
   .canvas-wrap{flex:1; min-height:0; border-radius:26px; overflow:hidden; box-shadow:var(--shadow); background:#FFFFFF; position:relative;}
@@ -433,6 +443,16 @@
       <button class="mode-btn" data-cmode="mix"><span class="ic">🔢</span> かぞえて けいさん</button>
       <button class="mode-btn" data-cmode="mult"><span class="ic">✖️</span> かけざん</button>
       <button class="mode-btn" data-cmode="soro"><span class="ic">🧮</span> そろばん</button>
+    </div>
+    <div class="m-mode" id="soro-kind" style="display:none">
+      <div class="q">🧮 どっちで あそぶ?</div>
+      <button class="mode-btn" data-skind="read"><span class="ic">👀</span> よむ <small>そろばんを よみとる</small></button>
+      <button class="mode-btn" data-skind="calc"><span class="ic">➕</span> けいさん <small>たまを うごかして けいさん</small></button>
+    </div>
+    <div class="m-mode" id="soro-level" style="display:none">
+      <div class="q">レベルを えらんでね</div>
+      <div class="lv-row" id="lv-row"></div>
+      <div class="lv-hint" id="lv-hint">1 = かんたん … 5 = むずかしい</div>
     </div>
     <div class="count-stars" id="count-stars"></div>
     <div id="count-field"></div>
@@ -847,10 +867,12 @@ function stopMole(){
 var COUNT_ROUNDS=8;
 var CNT_ANIMALS=['🐟','🐥','🐞','🦋','🐢','🐇'];
 var CNT_THINGS=['🍓','🍎','🌼','⭐','🎈','🍬'];
-var cnt={mode:'mix', round:0, answer:0, busy:false, soro:null, target:0};
+var cnt={mode:'mix', round:0, answer:0, busy:false, soro:null, target:0, soroKind:'read', soroLv:0, q:''};
 
 function countShowMode(){
   $('#count-mode').style.display='flex';
+  $('#soro-kind').style.display='none';
+  $('#soro-level').style.display='none';
   $('#count-stars').style.display='none';
   $('#count-field').style.display='none';
   $('#count-q').style.display='none';
@@ -859,14 +881,46 @@ function countShowMode(){
 document.querySelectorAll('#count-mode .mode-btn').forEach(function(b){
   b.addEventListener('click', function(){
     sfx.tap();
-    countStart(b.getAttribute('data-cmode'));
+    var m=b.getAttribute('data-cmode');
+    if(m==='soro'){
+      $('#count-mode').style.display='none';
+      $('#soro-kind').style.display='flex';
+    }else{
+      countStart(m);
+    }
   });
 });
+document.querySelectorAll('#soro-kind .mode-btn').forEach(function(b){
+  b.addEventListener('click', function(){
+    sfx.tap();
+    cnt.soroKind=b.getAttribute('data-skind');
+    $('#soro-kind').style.display='none';
+    $('#soro-level').style.display='flex';
+  });
+});
+(function buildLvRow(){
+  var row=$('#lv-row');
+  for(var i=1;i<=5;i++){
+    (function(i){
+      var b=document.createElement('button');
+      b.className='lv-btn';
+      b.textContent=String(i);
+      b.addEventListener('click', function(){
+        sfx.tap();
+        cnt.soroLv=i-1;
+        countStart('soro');
+      });
+      row.appendChild(b);
+    })(i);
+  }
+})();
 $('#count-restart').addEventListener('click', function(){ sfx.tap(); countShowMode(); });
 
 function countStart(mode){
   cnt.mode=mode; cnt.round=0;
   $('#count-mode').style.display='none';
+  $('#soro-kind').style.display='none';
+  $('#soro-level').style.display='none';
   $('#count-stars').style.display='flex';
   $('#count-field').style.display='block';
   $('#count-q').style.display='block';
@@ -903,6 +957,7 @@ function renderChoices(opts){
   opts.forEach(function(v){
     var btn=document.createElement('button');
     btn.className='num-btn'; btn.textContent=String(v);
+    btn.style.fontSize = v>=10000 ? '1.1rem' : v>=1000 ? '1.3rem' : v>=100 ? '1.6rem' : '';
     btn.addEventListener('click', function(){ countPick(btn,v); });
     box.appendChild(btn);
   });
@@ -1006,41 +1061,61 @@ function multNext(){
   renderChoices(makeOpts(cnt.answer,[n1,-n1,n2,-n2,1,-1],36));
 }
 
-/* --- そろばん(2けた: 10のくらい・1のくらい) --- */
-/* 8もん: よむ→つくる→たしざん→ひきざん を 1けた→2けた で2しゅう */
+/* --- そろばん(よむ/けいさん × レベル1〜5) --- */
+var SORO_READ=[
+  {lo:1,hi:9,rods:1},
+  {lo:10,hi:99,rods:2},
+  {lo:100,hi:999,rods:3},
+  {lo:1000,hi:9999,rods:4},
+  {lo:10000,hi:99999,rods:5}
+];
+var SORO_CALC=[
+  {terms:2, s:[1,6],  o:[1,8],  rods:1, r:[1,9],    fb:{start:2,text:'2 + 3',result:5}},
+  {terms:2, s:[10,89],o:[2,9],  rods:2, r:[1,99],   fb:{start:26,text:'26 + 7',result:33}},
+  {terms:3, s:[5,50], o:[2,20], rods:2, r:[1,99],   fb:{start:24,text:'24 + 18 − 6',result:36}},
+  {terms:4, s:[10,80],o:[5,40], rods:3, r:[10,499], fb:{start:75,text:'75 + 38 − 26 + 40',result:127}},
+  {terms:5, s:[20,90],o:[10,60],rods:3, r:[100,999],fb:{start:86,text:'86 + 57 − 32 + 45 + 60',result:216}}
+];
+function rangeRand(lo,hi){ return lo+rand(hi-lo+1); }
+/* とちゅうの値が 0〜そろばんの上限 に収まる式をつくる */
+function genChain(p){
+  var cap=Math.pow(10,p.rods)-1;
+  for(var t=0;t<500;t++){
+    var start=rangeRand(p.s[0],p.s[1]);
+    var val=start, text=String(start), ok=true;
+    for(var i=1;i<p.terms;i++){
+      var b=rangeRand(p.o[0],p.o[1]);
+      var plus=Math.random()<0.55;
+      if(!plus && val-b<0) plus=true;
+      if(plus && val+b>cap){
+        if(val-b>=0) plus=false; else { ok=false; break; }
+      }
+      val += plus? b : -b;
+      text += (plus?' + ':' − ')+b;
+    }
+    if(ok && val>=p.r[0] && val<=p.r[1]) return {start:start, result:val, text:text};
+  }
+  return p.fb;
+}
 function soroNext(){
-  var big=cnt.round>=4;
-  var kind=['read','make','add','sub'][cnt.round%4];
-  if(kind==='read'){
-    var N=big? 10+rand(90) : 1+rand(9);
+  if(cnt.soroKind==='read'){
+    var p=SORO_READ[cnt.soroLv];
+    var N=rangeRand(p.lo,p.hi);
     cnt.target=N; cnt.answer=N;
-    buildSoro(false);
+    buildSoro(false,p.rods);
     setSoro(N);
     $('#count-q').textContent='そろばんは いくつかな?';
-    renderChoices(makeOpts(N,[1,-1,5,-5,10,-10],99));
+    var m=Math.pow(10,String(N).length-1);
+    renderChoices(makeOpts(N,[1,-1,m,-m,5*m,-5*m,10,-10],p.hi));
     return;
   }
-  buildSoro(true);
-  var q, a, b;
-  if(kind==='make'){
-    cnt.target=big? 10+rand(90) : 1+rand(9);
-    q='「'+cnt.target+'」を そろばんで つくってね';
-  }else if(kind==='add'){
-    if(big){ a=10+rand(60); b=1+rand(Math.min(30,99-a)); }
-    else{ a=1+rand(6); b=1+rand(9-a); }
-    setSoro(a);
-    cnt.target=a+b;
-    q='「'+a+' + '+b+'」を そろばんで けいさんしてね';
-  }else{
-    if(big){ a=20+rand(80); b=1+rand(Math.min(19,a-1)); }
-    else{ a=2+rand(8); b=1+rand(a-1); }
-    setSoro(a);
-    cnt.target=a-b;
-    q='「'+a+' − '+b+'」を そろばんで けいさんしてね';
-  }
-  cnt.answer=cnt.target;
-  cnt.q=q;
-  $('#count-q').textContent=q;
+  var pc=SORO_CALC[cnt.soroLv];
+  var g=genChain(pc);
+  buildSoro(true,pc.rods);
+  setSoro(g.start);
+  cnt.target=g.result; cnt.answer=g.result;
+  cnt.q='「'+g.text+'」を けいさんしてね';
+  $('#count-q').textContent=cnt.q;
   var box=$('#count-choices');
   box.innerHTML='';
   var ok=document.createElement('button');
@@ -1061,18 +1136,21 @@ function soroNext(){
   });
   box.appendChild(ok);
 }
-function buildSoro(interactive){
+function buildSoro(interactive, rods){
   var f=$('#count-field');
   f.innerHTML='';
-  cnt.soro=[{h:0,e:0},{h:0,e:0}];
+  cnt.soro=[];
+  for(var i=0;i<rods;i++) cnt.soro.push({h:0,e:0});
   var w=document.createElement('div');
   w.className='soro';
+  w.style.gap = rods>=4 ? '4%' : (rods===3 ? '8%' : '14%');
   var bar=document.createElement('div'); bar.className='soro-bar';
   w.appendChild(bar);
-  for(var r=0;r<2;r++){
+  for(var r=0;r<rods;r++){
     (function(r){
       var rod=document.createElement('div');
       rod.className='soro-rod';
+      rod.style.width='min(72px, '+(84/rods)+'%)';
       rod.dataset.r=String(r);
       var hb=document.createElement('button'); hb.className='bead';
       rod.appendChild(hb);
@@ -1110,15 +1188,19 @@ function buildSoro(interactive){
   soroLayout();
 }
 function setSoro(N){
-  var t=Math.floor(N/10), o=N%10;
-  cnt.soro[0].h=t>=5?1:0; cnt.soro[0].e=t%5;
-  cnt.soro[1].h=o>=5?1:0; cnt.soro[1].e=o%5;
+  for(var i=cnt.soro.length-1;i>=0;i--){
+    var d=N%10; N=Math.floor(N/10);
+    cnt.soro[i].h = d>=5?1:0;
+    cnt.soro[i].e = d%5;
+  }
   soroLayout();
 }
 function soroValue(){
-  var t=cnt.soro[0].h*5+cnt.soro[0].e;
-  var o=cnt.soro[1].h*5+cnt.soro[1].e;
-  return t*10+o;
+  var v=0;
+  for(var i=0;i<cnt.soro.length;i++){
+    v = v*10 + (cnt.soro[i].h*5 + cnt.soro[i].e);
+  }
+  return v;
 }
 function soroLayout(){
   document.querySelectorAll('.soro-rod').forEach(function(rod){
