@@ -949,7 +949,7 @@ function snapCanvas(cv){
 }
 function pushDrawUndo(){
   dUndo.push(snapCanvas(dCanvas));
-  if(dUndo.length>15) dUndo.shift();
+  if(dUndo.length>10) dUndo.shift();
 }
 function drawUndo(){
   var s=dUndo.pop();
@@ -2379,6 +2379,7 @@ function floodFill(sx, sy, colorFn){
   var img=nPctx.getImageData(0,0,w,h), d=img.data;
   var visited=new Uint8Array(w*h);
   var stack=[seed];
+  var changed=false;
   while(stack.length){
     var i=stack.pop();
     if(visited[i]) continue;
@@ -2387,12 +2388,14 @@ function floodFill(sx, sy, colorFn){
     var x=i%w, y=(i-x)/w;
     var col=colorFn(x,y);
     var p=i*4;
+    if(d[p]!==col[0]||d[p+1]!==col[1]||d[p+2]!==col[2]||d[p+3]!==255) changed=true;
     d[p]=col[0]; d[p+1]=col[1]; d[p+2]=col[2]; d[p+3]=255;
     if(x>0) stack.push(i-1);
     if(x<w-1) stack.push(i+1);
     if(y>0) stack.push(i-w);
     if(y<h-1) stack.push(i+w);
   }
+  if(!changed) return false;   /* おなじ色でぬりなおし → 履歴に積まない */
   nPctx.putImageData(img,0,0);
   sfx.fill();
   return true;
@@ -2420,7 +2423,7 @@ function nurieTapFill(x,y){
 }
 function pushNurieUndo(){
   nurie.undo.push(snapCanvas(nPaint));
-  if(nurie.undo.length>15) nurie.undo.shift();
+  if(nurie.undo.length>10) nurie.undo.shift();
 }
 function nurieUndo(){
   var s=nurie.undo.pop();
