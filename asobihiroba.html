@@ -1007,35 +1007,59 @@ function multNext(){
 }
 
 /* --- そろばん(2けた: 10のくらい・1のくらい) --- */
+/* 8もん: よむ→つくる→たしざん→ひきざん を 1けた→2けた で2しゅう */
 function soroNext(){
-  var read=(cnt.round%2===0);
   var big=cnt.round>=4;
-  var N=big? 10+rand(90) : 1+rand(9);
-  cnt.target=N; cnt.answer=N;
-  buildSoro(!read);
-  if(read){
+  var kind=['read','make','add','sub'][cnt.round%4];
+  if(kind==='read'){
+    var N=big? 10+rand(90) : 1+rand(9);
+    cnt.target=N; cnt.answer=N;
+    buildSoro(false);
     setSoro(N);
     $('#count-q').textContent='そろばんは いくつかな?';
     renderChoices(makeOpts(N,[1,-1,5,-5,10,-10],99));
-  }else{
-    $('#count-q').textContent='「'+N+'」を そろばんで つくってね';
-    var box=$('#count-choices');
-    box.innerHTML='';
-    var ok=document.createElement('button');
-    ok.className='big-btn';
-    ok.textContent='できた!';
-    ok.addEventListener('click', function(){
-      if(cnt.busy) return;
-      sfx.tap();
-      if(soroValue()===cnt.target){
-        countAdvance();
-      }else{
-        sfx.nope();
-        $('#count-q').textContent='おしい! いまは「'+soroValue()+'」だよ';
-      }
-    });
-    box.appendChild(ok);
+    return;
   }
+  buildSoro(true);
+  var q, a, b;
+  if(kind==='make'){
+    cnt.target=big? 10+rand(90) : 1+rand(9);
+    q='「'+cnt.target+'」を そろばんで つくってね';
+  }else if(kind==='add'){
+    if(big){ a=10+rand(60); b=1+rand(Math.min(30,99-a)); }
+    else{ a=1+rand(6); b=1+rand(9-a); }
+    setSoro(a);
+    cnt.target=a+b;
+    q='「'+a+' + '+b+'」を そろばんで けいさんしてね';
+  }else{
+    if(big){ a=20+rand(80); b=1+rand(Math.min(19,a-1)); }
+    else{ a=2+rand(8); b=1+rand(a-1); }
+    setSoro(a);
+    cnt.target=a-b;
+    q='「'+a+' − '+b+'」を そろばんで けいさんしてね';
+  }
+  cnt.answer=cnt.target;
+  cnt.q=q;
+  $('#count-q').textContent=q;
+  var box=$('#count-choices');
+  box.innerHTML='';
+  var ok=document.createElement('button');
+  ok.className='big-btn';
+  ok.textContent='できた!';
+  ok.addEventListener('click', function(){
+    if(cnt.busy) return;
+    sfx.tap();
+    if(soroValue()===cnt.target){
+      countAdvance();
+    }else{
+      sfx.nope();
+      $('#count-q').textContent='おしい! いまは「'+soroValue()+'」だよ';
+      setTimeout(function(){
+        if(!cnt.busy) $('#count-q').textContent=cnt.q;
+      },1500);
+    }
+  });
+  box.appendChild(ok);
 }
 function buildSoro(interactive){
   var f=$('#count-field');
