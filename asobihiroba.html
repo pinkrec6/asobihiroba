@@ -342,6 +342,10 @@
   #hockey-wrap{flex:1; min-height:0; border-radius:26px; overflow:hidden; box-shadow:var(--shadow); position:relative;}
   #hockey-canvas{position:absolute; inset:0; width:100%; height:100%; touch-action:none;}
 
+  /* ---------- catch ---------- */
+  #catch-wrap{flex:1; min-height:0; border-radius:26px; overflow:hidden; box-shadow:var(--shadow); position:relative;}
+  #catch-canvas{position:absolute; inset:0; width:100%; height:100%; touch-action:none;}
+
   @media (prefers-reduced-motion: reduce){
     *{animation-duration:.01s !important; transition-duration:.01s !important;}
   }
@@ -375,6 +379,9 @@
       </button>
       <button class="game-card" style="--edge:var(--sun)" data-go="mole">
         <div class="icon">🐹</div><div class="name">もぐらたたき</div><div class="desc">💣には さわらないで!</div>
+      </button>
+      <button class="game-card" style="--edge:var(--mint)" data-go="catch">
+        <div class="icon">🧺</div><div class="name">キャッチ!</div><div class="desc">おちてくるのを うけとめよう</div>
       </button>
       <button class="game-card" style="--edge:var(--mint)" data-go="count">
         <div class="icon">🧮</div><div class="name">さんすう</div><div class="desc">かけざん・そろばんも!</div>
@@ -536,6 +543,26 @@
     <div id="hockey-wrap" style="display:none"><canvas id="hockey-canvas"></canvas></div>
   </section>
 
+  <!-- ============ CATCH ============ -->
+  <section class="screen" id="catch">
+    <div class="bar">
+      <button class="pill-btn" data-go="home">← もどる</button>
+      <div class="title">🧺 キャッチ!</div>
+      <button class="pill-btn" id="catch-restart" style="visibility:hidden">はじめから</button>
+    </div>
+    <div class="start-view" id="catch-start">
+      <div class="demo">🧺</div>
+      <div class="hint">ゆびで うごかして おちてくるものを キャッチ!<br>🥦と🫑は とっちゃダメ。⭐は 3てん だよ</div>
+      <button class="mode-btn" data-catch="girl"><span class="ic">👧</span> あめキャッチ <small>🍬をあつめる</small></button>
+      <button class="mode-btn" data-catch="papa"><span class="ic">👨</span> おさけキャッチ <small>🍺パパのばん</small></button>
+    </div>
+    <div class="mole-hud" id="catch-hud" style="display:none">
+      <div class="hud-box"><div class="lbl">てん</div><div class="val" id="catch-score">0</div></div>
+      <div class="hud-box"><div class="lbl">のこり</div><div class="val" id="catch-time">40</div></div>
+    </div>
+    <div id="catch-wrap" style="display:none"><canvas id="catch-canvas"></canvas></div>
+  </section>
+
 </div>
 
 <!-- overlay + confetti -->
@@ -642,7 +669,7 @@ $('#ov-home').addEventListener('click', function(){ hideOverlay(); go('home'); }
 
 /* ================= screens ================= */
 function go(id){
-  stopMole(); stopDuel(); stopHockey();
+  stopMole(); stopDuel(); stopHockey(); stopCatch();
   hideOverlay();
   document.querySelectorAll('.screen').forEach(function(s){
     s.classList.toggle('active', s.id===id);
@@ -654,6 +681,7 @@ function go(id){
   if(id==='nurie') nurieEnter();
   if(id==='duel') duelShowStart();
   if(id==='hockey') hockeyShowStart();
+  if(id==='catch') catchShowStart();
 }
 document.querySelectorAll('[data-go]').forEach(function(b){
   b.addEventListener('click', function(){ sfx.tap(); go(b.getAttribute('data-go')); });
@@ -3359,6 +3387,159 @@ function stopHockey(){
   hk.running=false;
   if(hk.raf){ cancelAnimationFrame(hk.raf); hk.raf=null; }
   hk.pads.forEach(function(p){ p.pid=null; });
+}
+
+/* ================= catch(キャッチ!) ================= */
+var CATCH_TIME=40;
+var CATCH_CFG={
+  girl:{face:'👧', happy:'😋', yuck:'😖', items:['🍬','🍭','🍫','🧁']},
+  papa:{face:'👨', happy:'😋', yuck:'😖', items:['🍺','🍶','🍷','🥃']}
+};
+var CATCH_BAD=['🥦','🫑'];
+var cat={running:false, raf:null, mode:'girl', score:0, left:CATCH_TIME,
+  px:0, tx:0, items:[], effects:[], spawnAt:0, countdown:null, W:0, H:0, flash:0, lastT:0};
+var catCanvas=$('#catch-canvas'), catCtx=catCanvas.getContext('2d');
+
+function catchShowStart(){
+  stopCatch();
+  $('#catch-start').style.display='flex';
+  $('#catch-hud').style.display='none';
+  $('#catch-wrap').style.display='none';
+  $('#catch-restart').style.visibility='hidden';
+}
+document.querySelectorAll('#catch-start .mode-btn').forEach(function(b){
+  b.addEventListener('click', function(){
+    sfx.tap();
+    catchStart(b.getAttribute('data-catch'));
+  });
+});
+$('#catch-restart').addEventListener('click', function(){ sfx.tap(); catchStart(); });
+
+function catchStart(mode){
+  stopCatch();
+  if(mode) cat.mode=mode;
+  cat.score=0; cat.left=CATCH_TIME; cat.items=[]; cat.effects=[]; cat.flash=0;
+  $('#catch-start').style.display='none';
+  $('#catch-hud').style.display='flex';
+  $('#catch-restart').style.visibility='visible';
+  var wrap=$('#catch-wrap');
+  wrap.style.display='block';
+  $('#catch-score').textContent='0';
+  $('#catch-time').textContent=String(CATCH_TIME);
+  requestAnimationFrame(function(){
+    var r=wrap.getBoundingClientRect();
+    catCanvas.width=Math.round(r.width*DPR);
+    catCanvas.height=Math.round(r.height*DPR);
+    cat.W=catCanvas.width; cat.H=catCanvas.height;
+    cat.px=cat.W/2; cat.tx=cat.W/2;
+    cat.spawnAt=performance.now()+600;
+    cat.lastT=0;
+    cat.running=true;
+    cat.countdown=setInterval(function(){
+      cat.left--;
+      $('#catch-time').textContent=String(cat.left);
+      if(cat.left<=5 && cat.left>0) sfx.tick();
+      if(cat.left<=0) catchEnd();
+    },1000);
+    cat.raf=requestAnimationFrame(catchStep);
+  });
+}
+function catchStep(){
+  if(!cat.running) return;
+  var W=cat.W, H=cat.H;
+  var base=Math.min(W,H);
+  var progress=1-cat.left/CATCH_TIME;
+  var now=performance.now();
+  /* 60fps基準のフレーム倍率(120Hz端末でも同じ速さになる) */
+  var dt = cat.lastT ? Math.min(3,(now-cat.lastT)/16.67) : 1;
+  cat.lastT=now;
+  /* あたらしく ふらせる */
+  if(now>=cat.spawnAt){
+    var r=Math.random(), em, val;
+    var cfg=CATCH_CFG[cat.mode];
+    if(r<0.1){ em='⭐'; val=3; }
+    else if(r<0.28){ em=CATCH_BAD[rand(CATCH_BAD.length)]; val=-3; }
+    else{ em=cfg.items[rand(cfg.items.length)]; val=1; }
+    var size=base*0.085;
+    cat.items.push({
+      x:size+Math.random()*(W-2*size), y:-size,
+      vy:H*(0.0035+0.0035*progress)*(0.85+Math.random()*0.3),
+      em:em, val:val, rot:(Math.random()-0.5)*0.6, vr:(Math.random()-0.5)*0.02
+    });
+    cat.spawnAt=now+(1050-500*progress)*(0.8+Math.random()*0.4);
+  }
+  /* キャッチャーいどう */
+  cat.px += (cat.tx-cat.px)*(1-Math.pow(0.7,dt));
+  var cs=base*0.15;
+  var cy=H-cs*0.62;
+  var caught=[];
+  cat.items.forEach(function(it,idx){
+    it.y+=it.vy*dt; it.rot+=it.vr*dt;
+    if(it.y > cy-cs*0.35 && it.y < cy+cs*0.5 && Math.abs(it.x-cat.px) < cs*0.62){
+      caught.push(idx);
+      cat.score=Math.max(0, cat.score+it.val);
+      $('#catch-score').textContent=String(cat.score);
+      if(it.val===3) sfx.star();
+      else if(it.val<0){ sfx.boom(); cat.flash=-14; }
+      else{ sfx.pop(); cat.flash=14; }
+      cat.effects.push({x:it.x, y:it.y-cs*0.4, txt:(it.val>0?'+':'')+it.val, age:0, bad:it.val<0});
+    }
+  });
+  for(var i=caught.length-1;i>=0;i--) cat.items.splice(caught[i],1);
+  cat.items=cat.items.filter(function(it){ return it.y < H+base*0.1; });
+  if(cat.flash>0) cat.flash--;
+  if(cat.flash<0) cat.flash++;
+  catchDraw(base, cs, cy);
+  cat.raf=requestAnimationFrame(catchStep);
+}
+function catchDraw(base, cs, cy){
+  var c=catCtx, W=cat.W, H=cat.H;
+  var css=getComputedStyle(document.documentElement);
+  c.fillStyle=css.getPropertyValue('--paper-soft').trim()||'#F2FAFF';
+  c.fillRect(0,0,W,H);
+  c.fillStyle=css.getPropertyValue('--sky-deep').trim()||'#A8D8EF';
+  c.globalAlpha=0.5;
+  c.fillRect(0,H-base*0.045,W,base*0.045);
+  c.globalAlpha=1;
+  c.textAlign='center'; c.textBaseline='middle';
+  cat.items.forEach(function(it){
+    c.save(); c.translate(it.x,it.y); c.rotate(it.rot);
+    c.font=Math.round(base*0.085)+'px sans-serif';
+    c.fillText(it.em,0,0);
+    c.restore();
+  });
+  var cfg=CATCH_CFG[cat.mode];
+  var face = cat.flash>0 ? cfg.happy : (cat.flash<0 ? cfg.yuck : cfg.face);
+  c.font=Math.round(cs*0.72)+'px sans-serif';
+  c.fillText('🧺', cat.px, cy-cs*0.34);
+  c.font=Math.round(cs*0.8)+'px sans-serif';
+  c.fillText(face, cat.px, cy+cs*0.32);
+  cat.effects=cat.effects.filter(function(e){ return e.age<30; });
+  cat.effects.forEach(function(e){
+    e.age++; e.y-=base*0.003;
+    c.globalAlpha=1-e.age/30;
+    c.font='bold '+Math.round(base*0.06)+'px ui-rounded, sans-serif';
+    c.fillStyle=e.bad?'#4AA3FF':'#FF7A6B';
+    c.fillText(e.txt, e.x, e.y);
+    c.globalAlpha=1;
+  });
+}
+function catPointer(e){
+  var r=catCanvas.getBoundingClientRect();
+  cat.tx=(e.clientX-r.left)*DPR;
+}
+catCanvas.addEventListener('pointerdown', function(e){ e.preventDefault(); catPointer(e); });
+catCanvas.addEventListener('pointermove', function(e){ e.preventDefault(); catPointer(e); });
+function catchEnd(){
+  stopCatch();
+  confetti(); sfx.great();
+  var msg = cat.score>=25 ? 'キャッチの めいじん!' : cat.score>=15 ? 'とっても じょうず!' : 'よく がんばりました!';
+  setTimeout(function(){ showOverlay('🧺', cat.score+' てん!', msg, function(){ catchStart(); }); },700);
+}
+function stopCatch(){
+  cat.running=false;
+  if(cat.raf){ cancelAnimationFrame(cat.raf); cat.raf=null; }
+  if(cat.countdown){ clearInterval(cat.countdown); cat.countdown=null; }
 }
 
 /* ================= iOS zoom guard ================= */
