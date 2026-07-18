@@ -1,5 +1,5 @@
 ﻿/* あそびひろば service worker — 一度ひらけば機内モードでも動く */
-var CACHE = 'asobihiroba-v9';
+var CACHE = 'asobihiroba-v10';
 var FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-512.png'];
 
 self.addEventListener('install', function(e){

@@ -180,6 +180,9 @@
     gap:min(14px, 2vw); max-width:min(520px, 100%); width:100%;
     margin:0 auto; align-content:center;
   }
+  #mole-board.grid4{grid-template-columns:repeat(4, 1fr); gap:min(10px, 1.6vw); max-width:min(600px,100%);}
+  #mole-board.grid4 .mole{font-size:clamp(1.7rem, 8vw, 3rem);}
+  #mole-board.grid4 .hole{border-radius:18px;}
   .hole{
     position:relative; aspect-ratio:1; border-radius:24px; overflow:hidden;
     background:radial-gradient(120% 55% at 50% 108%, var(--hole) 55%, transparent 56%), var(--paper-soft);
@@ -432,6 +435,8 @@
       <button class="mode-btn" data-mlv="easy"><span class="ic">🌱</span> かんたん <small>ゆっくり</small></button>
       <button class="mode-btn" data-mlv="norm"><span class="ic">🙂</span> ふつう</button>
       <button class="mode-btn" data-mlv="hard"><span class="ic">🔥</span> むずかしい <small>はやい!</small></button>
+      <button class="mode-btn" data-mlv="oni"><span class="ic">👹</span> おに <small>げきむず!</small></button>
+      <button class="mode-btn" data-mlv="coop"><span class="ic">🧒👩</span> きょうりょく <small>ふたりで 4×4</small></button>
     </div>
     <div class="mole-hud" id="mole-hud" style="display:none">
       <div class="hud-box"><div class="lbl">てん</div><div class="val" id="mole-score">0</div></div>
@@ -795,15 +800,17 @@ function memoryEnd(){
 }
 
 /* ================= mole ================= */
-var MOLE_TIME = 30;
-var mole = {score:0, left:MOLE_TIME, timers:[], countdown:null, holes:[], running:false, lv:'norm'};
+var mole = {score:0, left:30, timers:[], countdown:null, holes:[], running:false, lv:'norm'};
 var MOLE_FACES = ['🐹','🐰','🐸','🐼','🐻'];
-/* up0→でている時間(ms)の初期値, dUp→30秒かけて縮む量, gap→次が出るまでの間隔係数,
-   loops→同時に動くスポナー数, star/bomb→出現率, th→[めいじん,じょうず]のしきい値 */
+/* t→制限時間, holes→あなの数, up0→でている時間(ms)の初期値, dUp→時間経過で縮む量,
+   gap→次が出るまでの間隔係数, loops→同時に動くスポナー数, star/bomb→出現率,
+   th→[めいじん,じょうず]のしきい値 */
 var MOLE_LV={
-  easy:{up0:2000, dUp:400, gap:[0.75,0.45], loops:1, star:0.14, bomb:0.08, th:[12,7]},
-  norm:{up0:1500, dUp:500, gap:[0.6,0.4],   loops:2, star:0.13, bomb:0.12, th:[18,11]},
-  hard:{up0:1100, dUp:600, gap:[0.5,0.35],  loops:2, star:0.12, bomb:0.15, th:[25,15]}
+  easy:{t:30, holes:9,  up0:2000, dUp:400, gap:[0.75,0.45], loops:1, star:0.14, bomb:0.08, th:[12,7]},
+  norm:{t:30, holes:9,  up0:1500, dUp:500, gap:[0.6,0.4],   loops:2, star:0.13, bomb:0.12, th:[18,11]},
+  hard:{t:30, holes:9,  up0:1100, dUp:600, gap:[0.5,0.35],  loops:2, star:0.12, bomb:0.15, th:[25,15]},
+  oni: {t:30, holes:9,  up0:750,  dUp:350, gap:[0.42,0.3],  loops:3, star:0.12, bomb:0.18, th:[35,22]},
+  coop:{t:45, holes:16, up0:1400, dUp:500, gap:[0.55,0.4],  loops:3, star:0.13, bomb:0.12, th:[45,28]}
 };
 
 function moleShowStart(){
@@ -824,17 +831,19 @@ $('#mole-restart').addEventListener('click', function(){ sfx.tap(); moleStart();
 function moleStart(lv){
   stopMole();
   if(lv) mole.lv=lv;
-  mole.score=0; mole.left=MOLE_TIME; mole.running=true;
+  var p=MOLE_LV[mole.lv];
+  mole.score=0; mole.left=p.t; mole.running=true;
   $('#mole-start').style.display='none';
   $('#mole-hud').style.display='flex';
   $('#mole-restart').style.visibility='visible';
   $('#mole-score').textContent='0';
-  $('#mole-time').textContent=String(MOLE_TIME);
+  $('#mole-time').textContent=String(p.t);
   var board=$('#mole-board');
   board.style.display='grid';
+  board.classList.toggle('grid4', p.holes===16);
   board.innerHTML='';
   mole.holes=[];
-  for(var i=0;i<9;i++){
+  for(var i=0;i<p.holes;i++){
     (function(){
       var h=document.createElement('button');
       h.className='hole';
@@ -851,14 +860,13 @@ function moleStart(lv){
     if(mole.left<=5 && mole.left>0) sfx.tick();
     if(mole.left<=0) moleEnd();
   },1000);
-  moleSpawnLoop(0);
-  if(MOLE_LV[mole.lv].loops>1) moleSpawnLoop(600);
+  for(var s=0;s<p.loops;s++) moleSpawnLoop(s*450);
 }
 function moleSpawnLoop(delay){
   var id=setTimeout(function(){
     if(!mole.running) return;
     var p=MOLE_LV[mole.lv];
-    var progress = 1 - mole.left/MOLE_TIME;
+    var progress = 1 - mole.left/p.t;
     var upTime = p.up0 - p.dUp*progress;   /* だんだん速く */
     var free = mole.holes.filter(function(h){ return !h.classList.contains('up'); });
     if(free.length){
@@ -899,7 +907,8 @@ function moleEnd(){
   stopMole();
   confetti(); sfx.great();
   var th=MOLE_LV[mole.lv].th;
-  var msg = mole.score>=th[0] ? 'めいじんだね!' : mole.score>=th[1] ? 'とっても じょうず!' : 'よく がんばりました!';
+  var msg = mole.score>=th[0] ? (mole.lv==='coop' ? 'さいこうの チームワーク!' : 'めいじんだね!')
+          : mole.score>=th[1] ? 'とっても じょうず!' : 'よく がんばりました!';
   setTimeout(function(){ showOverlay('🏅', mole.score+' てん!', msg, function(){ moleStart(); }); },700);
 }
 function stopMole(){
